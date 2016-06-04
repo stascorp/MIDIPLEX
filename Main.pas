@@ -2942,25 +2942,50 @@ begin
 end;
 
 procedure TMainForm.Convert_MDI_MID;
-type
-  MDINote = record
-    NoteOn: Boolean;
-    NoteValue: Byte;
-  end;
 var
-  Stack: Array[0..15] of Array[0..255] of MDINote;
-  I,J: Integer;
+  Notes: Array[0..15] of Array of Byte;
+  NotesReset: Array[0..15] of Boolean;
+  I,J,K: Integer;
   Val: Byte;
   Rhythm: Boolean;
-  procedure ClearStack;
+  procedure ClearNotes;
   var
-    I,J: Integer;
+    I: Integer;
   begin
-    for I:=0 to 15 do
-      for J:=0 to 255 do begin
-        Stack[I][J].NoteOn := False;
-        Stack[I][J].NoteValue := 0;
+    for I := 0 to 15 do
+    begin
+      SetLength(Notes[I], 0);
+      NotesReset[I] := False;
+    end;
+  end;
+  function IsNoteOnChannel(Chn, Note: Byte): Boolean;
+  var
+    I: Integer;
+  begin
+    Result := False;
+    for I := 0 to Length(Notes[Chn]) - 1 do
+      if Notes[Chn][I] = Note then
+      begin
+        Result := True;
+        Break;
       end;
+  end;
+  procedure SetNoteOff(Chn, Note: Byte);
+  var
+    I, Idx: Integer;
+  begin
+    Idx := -1;
+    for I := 0 to Length(Notes[Chn]) - 1 do
+      if Notes[Chn][I] = Note then
+      begin
+        Idx := I;
+        Break;
+      end;
+    if Idx = -1 then
+      Exit;
+    for I := Idx+1 to Length(Notes[Chn]) - 1 do
+      Notes[Chn][I-1] := Notes[Chn][I];
+    SetLength(Notes[Chn], Length(Notes[Chn]) - 1);
   end;
   function GetGMInstrument(Bytes: Array of Byte): Byte;
   type
@@ -3001,86 +3026,123 @@ begin
   Log.Lines.Add('[*] Converting AdLib MDI to Standard MIDI...');
   Application.ProcessMessages;
   for I:=0 to Length(TrackData)-1 do begin
-    ClearStack;
+    ClearNotes;
     J := 0;
     while J < Length(TrackData[I].Data) do begin
       case TrackData[I].Data[J].Status shr 4 of
         8: begin
-          if Stack[TrackData[I].Data[J].Status and $F][TrackData[I].Data[J].BParm2].NoteOn then begin
-            TrackData[I].Data[J].BParm1 := Stack[TrackData[I].Data[J].Status and $F][TrackData[I].Data[J].BParm2].NoteValue;
-            Stack[TrackData[I].Data[J].Status and $F][TrackData[I].Data[J].BParm2].NoteOn := False;
-            Stack[TrackData[I].Data[J].Status and $F][TrackData[I].Data[J].BParm2].NoteValue := 0;
-            TrackData[I].Data[J].BParm2 := 0;
+          if TrackData[I].Data[J].BParm1 = 0 then
+          begin
+            // Global Note Off
+            if Length(Notes[TrackData[I].Data[J].Status and $F]) = 0 then
+            begin
+              if not NotesReset[TrackData[I].Data[J].Status and $F] then
+              begin
+                // No notes on channel -> Convert to All Notes Off
+                NotesReset[TrackData[I].Data[J].Status and $F] := True;
+                TrackData[I].Data[J].Status := $B0 or (TrackData[I].Data[J].Status and $F);
+                TrackData[I].Data[J].BParm1 := $7B;
+                TrackData[I].Data[J].BParm2 := 0;
+                Inc(J);
+                Continue;
+              end
+              else
+              begin
+                // Notes already reset
+                DelEvent(I, J, True);
+                Continue;
+              end;
+            end
+            else
+            begin
+              K := TrackData[I].Data[J].Status and $F;
+              TrackData[I].Data[J].BParm1 := Notes[K][0];
+              TrackData[I].Data[J].BParm2 := 0;
+              SetNoteOff(K, Notes[K][0]);
+              for K := 1 to Length(Notes[TrackData[I].Data[J].Status and $F]) - 1 do
+                NewEvent(I, J+K, TrackData[I].Data[J].Status, Notes[TrackData[I].Data[J].Status and $F][K]);
+            end;
+          end
+          else // Normal Note Off
+            SetNoteOff(TrackData[I].Data[J].Status and $F, TrackData[I].Data[J].BParm1);
 
-            if Rhythm then begin
-              // convert drums
-              case TrackData[I].Data[J].Status and 15 of
-                // ch06 - Bass Drum
-                6: begin
-                  TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 9;
-                  if TrackData[I].Data[J].BParm1 <= 36 then
-                    Val := 35
-                  else
-                    Val := 36;
-                  TrackData[I].Data[J].BParm1 := Val;
-                end;
-                // ch07 - Snare Drum
-                7: begin
-                  TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 9;
-                  if TrackData[I].Data[J].BParm1 <= 40 then
-                    Val := 38
-                  else
-                    Val := 40;
-                  TrackData[I].Data[J].BParm1 := Val;
-                end;
-                // ch08 - Tom
-                8: begin
-                  TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 9;
+          if Rhythm then begin
+            // convert drums
+            case TrackData[I].Data[J].Status and 15 of
+              // ch06 - Bass Drum
+              6: begin
+                TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 9;
+                if TrackData[I].Data[J].BParm1 <= 36 then
+                  Val := 35
+                else
+                  Val := 36;
+                TrackData[I].Data[J].BParm1 := Val;
+              end;
+              // ch07 - Snare Drum
+              7: begin
+                TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 9;
+                if TrackData[I].Data[J].BParm1 <= 40 then
+                  Val := 38
+                else
+                  Val := 40;
+                TrackData[I].Data[J].BParm1 := Val;
+              end;
+              // ch08 - Tom
+              8: begin
+                TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 9;
+                Val := 45;
+                if TrackData[I].Data[J].BParm1 < 39 then
+                  Val := 41;
+                if TrackData[I].Data[J].BParm1 = 39 then
+                  Val := 43;
+                if TrackData[I].Data[J].BParm1 = 40 then
                   Val := 45;
-                  if TrackData[I].Data[J].BParm1 < 39 then
-                    Val := 41;
-                  if TrackData[I].Data[J].BParm1 = 39 then
-                    Val := 43;
-                  if TrackData[I].Data[J].BParm1 = 40 then
-                    Val := 45;
-                  if TrackData[I].Data[J].BParm1 = 41 then
-                    Val := 47;
-                  if TrackData[I].Data[J].BParm1 = 42 then
-                    Val := 48;
-                  if TrackData[I].Data[J].BParm1 > 42 then
-                    Val := 50;
-                  TrackData[I].Data[J].BParm1 := Val;
-                end;
-                // ch09 - Cymbal
-                9: begin
+                if TrackData[I].Data[J].BParm1 = 41 then
+                  Val := 47;
+                if TrackData[I].Data[J].BParm1 = 42 then
+                  Val := 48;
+                if TrackData[I].Data[J].BParm1 > 42 then
+                  Val := 50;
+                TrackData[I].Data[J].BParm1 := Val;
+              end;
+              // ch09 - Cymbal
+              9: begin
+                Val := 57;
+                if TrackData[I].Data[J].BParm1 <= 50 then
+                  Val := 49;
+                if (TrackData[I].Data[J].BParm1 > 50) and
+                (TrackData[I].Data[J].BParm1 <= 65) then
                   Val := 57;
-                  if TrackData[I].Data[J].BParm1 <= 50 then
-                    Val := 49;
-                  if (TrackData[I].Data[J].BParm1 > 50) and
-                  (TrackData[I].Data[J].BParm1 <= 65) then
-                    Val := 57;
-                  if TrackData[I].Data[J].BParm1 > 65 then
-                    Val := 55;
-                  TrackData[I].Data[J].BParm1 := Val;
-                end;
-                // ch10 - Hi-Hat
-                10: begin
-                  TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 9;
-                  if TrackData[I].Data[J].BParm1 <= 44 then
-                    Val := 42
-                  else
-                    Val := 44;
-                  TrackData[I].Data[J].BParm1 := Val;
-                end;
+                if TrackData[I].Data[J].BParm1 > 65 then
+                  Val := 55;
+                TrackData[I].Data[J].BParm1 := Val;
+              end;
+              // ch10 - Hi-Hat
+              10: begin
+                TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 9;
+                if TrackData[I].Data[J].BParm1 <= 44 then
+                  Val := 42
+                else
+                  Val := 44;
+                TrackData[I].Data[J].BParm1 := Val;
               end;
             end;
-            Inc(J);
-          end else
-            DelEvent(I, J, True);
+          end;
+          Inc(J);
         end;
         9: begin
-          Stack[TrackData[I].Data[J].Status and $F][TrackData[I].Data[J].BParm2].NoteOn := True;
-          Stack[TrackData[I].Data[J].Status and $F][TrackData[I].Data[J].BParm2].NoteValue := TrackData[I].Data[J].BParm1;
+          if TrackData[I].Data[J].BParm2 = 0 then
+          begin
+            // Treat as Note Off
+            SetNoteOff(TrackData[I].Data[J].Status and $F, TrackData[I].Data[J].BParm1);
+          end
+          else
+            if not IsNoteOnChannel(TrackData[I].Data[J].Status and $F, TrackData[I].Data[J].BParm1) then
+            begin
+              K := TrackData[I].Data[J].Status and $F;
+              SetLength(Notes[K], Length(Notes[K]) + 1);
+              Notes[K][High(Notes[K])] := TrackData[I].Data[J].BParm1;
+            end;
 
           if Rhythm then begin
             // convert drums
