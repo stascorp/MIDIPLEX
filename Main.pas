@@ -924,8 +924,7 @@ begin
   Result := False;
   Log.Lines.Add('[*] Reading RIFF MIDI file...');
   IFFGetNodes('RIFF', F.Memory, 0, F.Size, Nodes);
-  IFFSearchNode(Nodes, FNodes, 'RIFF');
-  if Length(Nodes) = 0 then begin
+  if IFFSearchNode(Nodes, 'RIFF') = 0 then begin
     Log.Lines.Add('[-] Error: No RIFF chunks found.');
     Exit;
   end;
@@ -978,8 +977,7 @@ begin
   Result := False;
   Log.Lines.Add('[*] Reading MIDI Stream file...');
   IFFGetNodes('RIFF', F.Memory, 0, F.Size, Nodes);
-  IFFSearchNode(Nodes, FNodes, 'RIFF');
-  if Length(Nodes) = 0 then begin
+  if IFFSearchNode(Nodes, 'RIFF') = 0 then begin
     Log.Lines.Add('[-] Error: No RIFF chunks found.');
     Exit;
   end;
