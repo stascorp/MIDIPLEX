@@ -737,7 +737,7 @@ begin
   #13#10 +
   'Copyright (C) Stas''M Corp. 2012-2016' + #13#10 +
   #13#10 +
-  'Source code is licensed under GNU GPL v3, see LICENSE file.',
+  'Software is licensed under GNU GPL v3, see LICENSE file.',
   'About', MB_ICONINFORMATION or MB_OK);
 end;
 
@@ -5083,21 +5083,38 @@ end;
 
 procedure TMainForm.BtOpenClick(Sender: TObject);
 var
-  Fmt: String;
+  Fmt, FilterExt: String;
+  Filter: TStringList;
 begin
   if not OpenDialog.Execute then
     Exit;
   Log.Clear;
   Fmt := '';
-  case OpenDialog.FilterIndex of
-    2: Fmt := 'smf';
-    3: Fmt := 'rmi';
-    4: Fmt := 'mids';
-    5: Fmt := 'cmf';
-    6: Fmt := 'mus';
-    7: Fmt := 'mdi';
-    8: Fmt := 'raw';
-    9: Fmt := 'syx';
+  if OpenDialog.FilterIndex > 1 then
+  begin
+    Filter := TStringList.Create;
+    Filter.Delimiter := '|';
+    Filter.StrictDelimiter := True;
+    Filter.DelimitedText := OpenDialog.Filter;
+    FilterExt := Filter[OpenDialog.FilterIndex*2 - 1];
+    Filter.Free;
+
+    if Pos('*.mid', FilterExt) > 0 then
+      Fmt := 'smf';
+    if Pos('*.rmi', FilterExt) > 0 then
+      Fmt := 'rmi';
+    if Pos('*.mds', FilterExt) > 0 then
+      Fmt := 'mids';
+    if Pos('*.cmf', FilterExt) > 0 then
+      Fmt := 'cmf';
+    if Pos('*.mus', FilterExt) > 0 then
+      Fmt := 'mus';
+    if Pos('*.mdi', FilterExt) > 0 then
+      Fmt := 'mdi';
+    if Pos('*.raw', FilterExt) > 0 then
+      Fmt := 'raw';
+    if Pos('*.syx', FilterExt) > 0 then
+      Fmt := 'syx';
   end;
   LoadFile(OpenDialog.FileName, Fmt);
   if TrkCh.Items.Count > 0 then begin
@@ -5751,7 +5768,8 @@ end;
 
 procedure TMainForm.MSaveAsClick(Sender: TObject);
 var
-  FileName: String;
+  FileName, FilterExt: String;
+  Filter: TStringList;
 begin
   SaveDialog.FileName := OpenDialog.FileName;
   if not SaveDialog.Execute then
@@ -5759,45 +5777,57 @@ begin
   FileName := SaveDialog.FileName;
   if OpenDialog.FileName <> '' then
     OpenDialog.FileName := FileName;
-  case SaveDialog.FilterIndex of
-    1: begin
-      if (ExtractFileExt(FileName) = '')
-      or (
-          (LowerCase(ExtractFileExt(FileName)) <> '.mid')
-      and (LowerCase(ExtractFileExt(FileName)) <> '.midi')
-      and (LowerCase(ExtractFileExt(FileName)) <> '.kar')
-      )
-      then
-        FileName := FileName + '.mid';
-    end;
-    2: begin
-      if (ExtractFileExt(FileName) = '')
-      or (
-          (LowerCase(ExtractFileExt(FileName)) <> '.rmi')
-      and (LowerCase(ExtractFileExt(FileName)) <> '.rmid')
-      )
-      then
-        FileName := FileName + '.rmi';
-    end;
-    3: begin
-      if (ExtractFileExt(FileName) = '')
-      or (LowerCase(ExtractFileExt(FileName)) <> '.mdi')
-      then
-        FileName := FileName + '.mdi';
-    end;
-    4: begin
-      if (ExtractFileExt(FileName) = '')
-      or (LowerCase(ExtractFileExt(FileName)) <> '.raw')
-      then
-        FileName := FileName + '.raw';
-    end;
-    5: begin
-      if (ExtractFileExt(FileName) = '')
-      or (LowerCase(ExtractFileExt(FileName)) <> '.syx')
-      then
-        FileName := FileName + '.syx';
-    end;
+
+  Filter := TStringList.Create;
+  Filter.Delimiter := '|';
+  Filter.StrictDelimiter := True;
+  Filter.DelimitedText := SaveDialog.Filter;
+  FilterExt := Filter[SaveDialog.FilterIndex*2 - 1];
+  Filter.Free;
+
+  if Pos('*.mid', FilterExt) > 0 then
+  begin
+    if (ExtractFileExt(FileName) = '')
+    or (
+        (LowerCase(ExtractFileExt(FileName)) <> '.mid')
+    and (LowerCase(ExtractFileExt(FileName)) <> '.midi')
+    and (LowerCase(ExtractFileExt(FileName)) <> '.kar')
+    )
+    then
+      FileName := FileName + '.mid';
   end;
+  if Pos('*.rmi', FilterExt) > 0 then
+  begin
+    if (ExtractFileExt(FileName) = '')
+    or (
+        (LowerCase(ExtractFileExt(FileName)) <> '.rmi')
+    and (LowerCase(ExtractFileExt(FileName)) <> '.rmid')
+    )
+    then
+      FileName := FileName + '.rmi';
+  end;
+  if Pos('*.mdi', FilterExt) > 0 then
+  begin
+    if (ExtractFileExt(FileName) = '')
+    or (LowerCase(ExtractFileExt(FileName)) <> '.mdi')
+    then
+      FileName := FileName + '.mdi';
+  end;
+  if Pos('*.raw', FilterExt) > 0 then
+  begin
+    if (ExtractFileExt(FileName) = '')
+    or (LowerCase(ExtractFileExt(FileName)) <> '.raw')
+    then
+      FileName := FileName + '.raw';
+  end;
+  if Pos('*.syx', FilterExt) > 0 then
+  begin
+    if (ExtractFileExt(FileName) = '')
+    or (LowerCase(ExtractFileExt(FileName)) <> '.syx')
+    then
+      FileName := FileName + '.syx';
+  end;
+
   SaveFile(FileName);
 end;
 
