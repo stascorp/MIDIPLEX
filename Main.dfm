@@ -561,12 +561,12 @@ object MainForm: TMainForm
   object OpenDialog: TOpenDialog
     Filter = 
       'All supported MIDI formats|*.mid;*.midi;*.kar;*.rmi;*.rmid;*.orc' +
-      ';*.mds;*.mids;*.cmf;*.mus;*.mdi;*.raw;*.syx|Standard MIDI (*.mid' +
-      ';*.midi;*.kar)|*.mid;*.midi;*.kar|RIFF MIDI (*.rmi;*.rmid;*.orc)' +
-      '|*.rmi;*.rmid;*.orc|MIDI Stream (*.mds;*.mids)|*.mds;*.mids|Crea' +
-      'tive Music File (*.cmf)|*.cmf|AdLib MUS (*.mus)|*.mus|AdLib MDI ' +
-      '(*.mdi)|*.mdi|Raw MIDI data (Standard)|*.raw|System Exclusive da' +
-      'ta|*.syx'
+      ';*.mds;*.mids;*.xmi;*.cmf;*.mus;*.mdi;*.raw;*.syx|Standard MIDI ' +
+      '(*.mid;*.midi;*.kar)|*.mid;*.midi;*.kar|RIFF MIDI (*.rmi;*.rmid;' +
+      '*.orc)|*.rmi;*.rmid;*.orc|MIDI Stream (*.mds;*.mids)|*.mds;*.mid' +
+      's|Miles Extended MIDI (*.xmi)|*.xmi|Creative Music File (*.cmf)|' +
+      '*.cmf|AdLib MUS (*.mus)|*.mus|AdLib MDI (*.mdi)|*.mdi|Raw MIDI d' +
+      'ata (Standard)|*.raw|System Exclusive data|*.syx'
     Title = 'Open MIDI File'
     Left = 256
     Top = 40
@@ -765,6 +765,10 @@ object MainForm: TMainForm
           Caption = 'Standard MIDI'
           OnClick = MFormatMIDClick
         end
+        object MFormatXMI: TMenuItem
+          Caption = 'Extended MIDI'
+          OnClick = MFormatXMIClick
+        end
         object MFormatMUS: TMenuItem
           Caption = 'AdLib MUS'
           OnClick = MFormatMUSClick
@@ -794,6 +798,10 @@ object MainForm: TMainForm
         object MProfileMID: TMenuItem
           Caption = 'Standard MIDI'
           OnClick = MProfileMIDClick
+        end
+        object MProfileXMI: TMenuItem
+          Caption = 'Extended MIDI'
+          OnClick = MProfileXMIClick
         end
         object MProfileMUS: TMenuItem
           Caption = 'AdLib MUS'
@@ -1211,7 +1219,7 @@ object MainForm: TMainForm
           end
         end
         object XMIDI1: TMenuItem
-          Caption = 'XMIDI'
+          Caption = 'Extended MIDI'
           object Loopstart1: TMenuItem
             Caption = 'Loop start'
             OnClick = Loopstart1Click

@@ -273,6 +273,8 @@ type
     panToolbar: TPanel;
     bPlay: TBitBtn;
     bStop: TBitBtn;
+    MFormatXMI: TMenuItem;
+    MProfileXMI: TMenuItem;
     procedure BtOpenClick(Sender: TObject);
     procedure FormCreate(Sender: TObject);
     procedure TrkChChange(Sender: TObject);
@@ -440,6 +442,8 @@ type
     procedure VisualTimerTimer(Sender: TObject);
     procedure FormDestroy(Sender: TObject);
     procedure MAboutClick(Sender: TObject);
+    procedure MFormatXMIClick(Sender: TObject);
+    procedure MProfileXMIClick(Sender: TObject);
   private
     { Private declarations }
     procedure OnEventChange(var Msg: TMessage); message WM_EVENTIDX;
@@ -452,11 +456,13 @@ type
     function ReadMIDI(var F: TMemoryStream): Boolean;
     function ReadRMI(var F: TMemoryStream): Boolean;
     function ReadMIDS(var F: TMemoryStream): Boolean;
+    function ReadXMI(var F: TMemoryStream): Boolean;
     function ReadMUS(var F: TMemoryStream; FileName: String): Boolean;
     function ReadRaw(var F: TMemoryStream): Boolean;
     function ReadSYX(var F: TMemoryStream): Boolean;
     procedure ReadTrackData(var F: TMemoryStream; var Trk: Chunk);
     procedure ReadTrackData_MIDS(var F: TMemoryStream; var Trk: Chunk);
+    procedure ReadTrackData_XMI(var F: TMemoryStream; var Trk: Chunk);
     procedure ReadTrackData_MUS(var F: TMemoryStream; var Trk: Chunk);
     procedure ReadTrackData_SYX(var F: TMemoryStream; var Trk: Chunk);
     procedure WriteMIDI(var F: TMemoryStream);
@@ -493,9 +499,9 @@ var
   WidTable: Array[0..4] of Integer = (40, 56, 24, 172, 320);
   Opened: Boolean = False;
   Container, EventFormat, EventProfile, EventViewProfile: AnsiString;
-  // Container (smf, rmi, cmf, mus, raw, syx, mids)
-  // EventFormat (mid, mus)
-  // EventProfile (mid, mdi, cmf, mus)
+  // Container (smf, rmi, xmi, cmf, mus, raw, syx, mids)
+  // EventFormat (mid, xmi, mus)
+  // EventProfile (mid, mdi, xmi, cmf, mus)
   // EventViewProfile = EventProfile
   SongData: TValueListEditor;
   TrackData: Array of Chunk;
@@ -673,6 +679,31 @@ begin
     end;
     Result := (Result shl 7) or (B and 127);
   end;
+end;
+
+function ReadVarVal_XMI(var F: TMemoryStream; var Error: Byte): UInt64;
+var
+  B: Byte;
+begin
+  Result := 0;
+  Error := 0;
+  if F.Position >= F.Size then begin
+    Error := 2;
+    Exit;
+  end else
+    F.ReadBuffer(B, 1);
+  while B = $7F do begin
+    Result := Result + B;
+    if F.Position >= F.Size then begin
+      Error := 2;
+      Exit;
+    end else
+      F.ReadBuffer(B, 1);
+  end;
+  if B >= $80 then
+    F.Seek(-1, soCurrent)
+  else
+    Result := Result + B;
 end;
 
 function ReadVarVal_MUS(var F: TMemoryStream; var Error: Byte): UInt64;
@@ -1035,6 +1066,144 @@ begin
 
   Log.Lines.Add('[+] '+IntToStr(Length(TrackData[0].Data))+' events found.');
   SongData_PutInt('MIDIType', 0);
+  Result := True;
+  Log.Lines.Add('');
+  Log.Lines.Add('[*] Information:');
+  LogSongInfo;
+  Progress.Position := 0;
+  Log.Lines.Add('');
+  RefTrackList;
+  CalculateEvnts;
+end;
+
+function TMainForm.ReadXMI(var F: TMemoryStream): Boolean;
+type
+  TrackInfo = record
+    Offset, Size: Cardinal;
+  end;
+var
+  Nodes, FNodes, NodeData: IFFNodes;
+  Tracks: Word;
+  TracksInfo: Array of TrackInfo;
+  I: Integer;
+  M: TMemoryStream;
+begin
+  Result := False;
+  Log.Lines.Add('[*] Reading Extended MIDI file...');
+  IFFGetNodes('IFF', F.Memory, 0, F.Size, Nodes);
+  if IFFSearchNode(Nodes, 'CAT ', 'XMID') > 0 then begin
+    // Standard multi-song XMIDI
+    Tracks := 0;
+    if (Nodes[0].Name = 'FORM') and (Nodes[0].Sub = 'XDIR') then
+    begin
+      // with header
+      IFFGetNodes('IFF', F.Memory, Nodes[0].DataOffs, Nodes[0].Size, FNodes);
+      if IFFSearchNode(FNodes, NodeData, 'INFO') > 0 then
+      begin
+        if NodeData[0].Size >= 2 then
+        begin
+          if NodeData[0].DataOffs + NodeData[0].Size <= F.Size then begin
+            F.Seek(NodeData[0].DataOffs, soFromBeginning);
+            F.ReadBuffer(Tracks, 2);
+          end else
+            Log.Lines.Add('[*] Warning: XMIDI INFO chunk is truncated.');
+        end else
+          Log.Lines.Add('[*] Warning: XMIDI INFO chunk has wrong size.');
+      end else
+        Log.Lines.Add('[*] Warning: XMIDI INFO chunk not found.');
+
+      Log.Lines.Add('[*] Checking tracks...');
+      IFFSearchNode(Nodes, FNodes, 'CAT ', 'XMID');
+      IFFGetNodes('IFF', F.Memory, FNodes[0].DataOffs, FNodes[0].Size, Nodes);
+      IFFSearchNode(Nodes, FNodes, 'FORM', 'XMID');
+      Nodes := FNodes;
+      if Tracks > 0 then
+      begin
+        if Length(Nodes) > Tracks then
+          Log.Lines.Add('[*] Warning: Additional XMIDI chunks found.');
+        if Length(Nodes) < Tracks then
+        begin
+          Log.Lines.Add('[*] Warning: Missing XMIDI tracks ('+IntToStr(Tracks - Length(Nodes))+' out of '+IntToStr(Tracks)+').');
+          Tracks := Length(Nodes);
+        end;
+      end else
+        Tracks := Length(Nodes);
+      for I := 0 to Tracks - 1 do
+      begin
+        IFFGetNodes('IFF', F.Memory, Nodes[I].DataOffs, Nodes[I].Size, NodeData);
+        IFFSearchNode(NodeData, FNodes, 'EVNT');
+        SetLength(TracksInfo, Length(TracksInfo) + 1);
+        if Length(FNodes) > 0 then
+        begin
+          TracksInfo[High(TracksInfo)].Offset := FNodes[0].DataOffs;
+          TracksInfo[High(TracksInfo)].Size := FNodes[0].Size;
+        end else
+        begin
+          TracksInfo[High(TracksInfo)].Offset := Nodes[I].DataOffs;
+          TracksInfo[High(TracksInfo)].Size := 0;
+        end;
+        Log.Lines.Add('[+] Track #'+IntToStr(I)+' found ('+IntToStr(TracksInfo[High(TracksInfo)].Size)+' bytes).');
+      end;
+    end;
+  end else
+    if IFFSearchNode(Nodes, 'FORM', 'XMID') > 0 then begin
+      // Detached XMIDI chunks
+      Log.Lines.Add('[*] Checking tracks...');
+      IFFSearchNode(Nodes, FNodes, 'FORM', 'XMID');
+      Nodes := FNodes;
+      for I := 0 to Length(Nodes) - 1 do
+      begin
+        IFFGetNodes('IFF', F.Memory, Nodes[I].DataOffs, Nodes[I].Size, NodeData);
+        IFFSearchNode(NodeData, FNodes, 'EVNT');
+        SetLength(TracksInfo, Length(TracksInfo) + 1);
+        if Length(FNodes) > 0 then
+        begin
+          TracksInfo[High(TracksInfo)].Offset := FNodes[0].DataOffs;
+          TracksInfo[High(TracksInfo)].Size := FNodes[0].Size;
+        end else
+        begin
+          TracksInfo[High(TracksInfo)].Offset := Nodes[I].DataOffs;
+          TracksInfo[High(TracksInfo)].Size := 0;
+        end;
+        Log.Lines.Add('[+] Track #'+IntToStr(I)+' found ('+IntToStr(TracksInfo[High(TracksInfo)].Size)+' bytes).');
+      end;
+    end else
+    begin
+      Log.Lines.Add('[-] Error: XMIDI headers not found.');
+      Exit;
+    end;
+
+  SongData_PutDWord('InitTempo', 500000);
+  SongData_PutInt('SMPTE', 0);
+  SongData_PutInt('Division', 60);
+
+  SetLength(TrackData, 0);
+  for I := 0 to Length(TracksInfo) - 1 do
+  begin
+    // Reading track #I
+    Log.Lines.Add('[*] Reading track '+IntToStr(I)+'...');
+    if F.Size < TracksInfo[I].Offset + TracksInfo[I].Size then begin
+      if F.Size - TracksInfo[I].Offset < 0 then
+      begin
+        Log.Lines.Add('[-] Error: Event data is truncated.');
+        Continue;
+      end;
+      Log.Lines.Add('[*] Warning: Event data is truncated.');
+      TracksInfo[I].Size := F.Size - TracksInfo[I].Offset;
+    end;
+    SetLength(TrackData, Length(TrackData) + 1);
+    TrackData[High(TrackData)].Title := '';
+    SetLength(TrackData[High(TrackData)].Data, 0);
+
+    F.Seek(TracksInfo[I].Offset, soFromBeginning);
+    M := TMemoryStream.Create;
+    M.SetSize(TracksInfo[I].Size);
+    F.ReadBuffer(M.Memory^, M.Size);
+    ReadTrackData_XMI(M, TrackData[High(TrackData)]);
+    M.Free;
+    Log.Lines.Add('[+] '+IntToStr(Length(TrackData[High(TrackData)].Data))+' events found.');
+  end;
+  SongData_PutInt('MIDIType', 2);
   Result := True;
   Log.Lines.Add('');
   Log.Lines.Add('[*] Information:');
@@ -1825,6 +1994,442 @@ begin
   end;
 end;
 
+procedure TMainForm.ReadTrackData_XMI(var F: TMemoryStream; var Trk: Chunk);
+var
+  J: Integer;
+  Buf: Pointer;
+  B: Byte;
+  Ticks: UInt64;
+  Err: Byte;
+
+  procedure ReadBuf(var Buf; Size: Cardinal);
+  begin
+    try
+      F.ReadBuffer(Buf, Size);
+    except
+      Log.Lines.Add('[-] Error: Incomplete event (end of track reached).');
+    end;
+  end;
+begin
+  while F.Position < F.Size do begin
+    // Reading ticks count
+    Ticks := ReadVarVal_XMI(F, Err);
+    if Err=1 then
+    begin
+      Log.Lines.Add('[-] Error: Ticks count overflow at offset '+IntToStr(F.Position)+'.');
+      Continue;
+    end;
+    if Err=2 then begin
+      Log.Lines.Add('[-] Error: Incomplete event (end of track reached).');
+      Break;
+    end;
+    if F.Position >= F.Size then
+      Break;
+    // Reading status byte
+    ReadBuf(B, 1);
+    // Adding event
+    SetLength(Trk.Data, Length(Trk.Data)+1);
+    // Initializing structure
+    Trk.Data[Length(Trk.Data)-1].Status:=B;
+    Trk.Data[Length(Trk.Data)-1].BParm1:=0;
+    Trk.Data[Length(Trk.Data)-1].BParm2:=0;
+    Trk.Data[Length(Trk.Data)-1].Value:=0;
+    Trk.Data[Length(Trk.Data)-1].Len:=0;
+    Trk.Data[Length(Trk.Data)-1].RunStatMode:=False;
+    Trk.Data[Length(Trk.Data)-1].Ticks:=Ticks;
+    case B shr 4 of
+      8: begin // NoteOff (unused in XMI)
+        Trk.Data[Length(Trk.Data)-1].BParm1:=0;
+        Trk.Data[Length(Trk.Data)-1].BParm2:=0;
+      end;
+      9: begin // XMI Note (3 params)
+        ReadBuf(B, 1);
+        if B>127 then begin
+          Log.Lines.Add('[-] Error: Parameter greater than 127 at offset '+IntToStr(F.Position-1)+'.');
+          B:=127;
+        end;
+        Trk.Data[Length(Trk.Data)-1].BParm1:=B;
+        ReadBuf(B, 1);
+        if B>127 then begin
+          Log.Lines.Add('[-] Error: Parameter greater than 127 at offset '+IntToStr(F.Position-1)+'.');
+          B:=127;
+        end;
+        Trk.Data[Length(Trk.Data)-1].BParm2:=B;
+        // Read note duration
+        Trk.Data[Length(Trk.Data)-1].Len := ReadVarVal(F, Err);
+        if Err=2 then begin
+          Log.Lines.Add('[-] Error: Incomplete event (end of track reached).');
+          SetLength(Trk.Data, Length(Trk.Data)-1);
+          Log.Lines.Add('[+] Fixed.');
+          Break;
+        end;
+        if Err=1 then begin
+          Log.Lines.Add('[-] Error: Length overflow at offset '+IntToStr(F.Position)+'.');
+          Trk.Data[Length(Trk.Data)-1].Len := 0;
+        end;
+      end;
+      10..11: begin // PolyAfterTouch, Control (2 params)
+        ReadBuf(B, 1);
+        if B>127 then begin
+          Log.Lines.Add('[-] Error: Parameter greater than 127 at offset '+IntToStr(F.Position-1)+'.');
+          B:=127;
+        end;
+        Trk.Data[Length(Trk.Data)-1].BParm1:=B;
+        ReadBuf(B, 1);
+        if B>127 then begin
+          Log.Lines.Add('[-] Error: Parameter greater than 127 at offset '+IntToStr(F.Position-1)+'.');
+          B:=127;
+        end;
+        Trk.Data[Length(Trk.Data)-1].BParm2:=B;
+      end;
+      12..13: begin // ProgramChange, ChanAfterTouch (1 param)
+        ReadBuf(B, 1);
+        if B>127 then begin
+          Log.Lines.Add('[-] Error: Parameter greater than 127 at offset '+IntToStr(F.Position-1)+'.');
+          B:=127;
+        end;
+        Trk.Data[Length(Trk.Data)-1].BParm1:=B;
+      end;
+      14: begin // Pitch Bend (1 param / 2 bytes)
+        ReadBuf(B, 1);
+        if B>127 then begin
+          Log.Lines.Add('[-] Error: Parameter greater than 127 at offset '+IntToStr(F.Position-1)+'.');
+          B:=127;
+        end;
+        Trk.Data[Length(Trk.Data)-1].BParm1:=B;
+        ReadBuf(B, 1);
+        if B>127 then begin
+          Log.Lines.Add('[-] Error: Parameter greater than 127 at offset '+IntToStr(F.Position-1)+'.');
+          B:=127;
+        end;
+        Trk.Data[Length(Trk.Data)-1].BParm2:=B;
+        Trk.Data[Length(Trk.Data)-1].Value:=
+        Trk.Data[Length(Trk.Data)-1].BParm1+
+        Trk.Data[Length(Trk.Data)-1].BParm2*128;
+      end;
+      15: begin // System
+        case B and 15 of
+          0: begin // SysEx
+            Trk.Data[Length(Trk.Data)-1].Len:=ReadVarVal(F, Err);
+            if Err=2 then begin
+              Log.Lines.Add('[-] Error: Incomplete event (end of track reached).');
+              SetLength(Trk.Data, Length(Trk.Data)-1);
+              Log.Lines.Add('[+] Fixed.');
+              Break;
+            end;
+            if Err=1 then begin
+              Log.Lines.Add('[-] Error: Length overflow at offset '+IntToStr(F.Position)+'.');
+              Trk.Data[Length(Trk.Data)-1].Len := 0;
+            end else
+              for J:=0 to Trk.Data[Length(Trk.Data)-1].Len-1 do begin
+                ReadBuf(B, 1);
+                if F.Position >= F.Size then begin
+                  Trk.Data[Length(Trk.Data)-1].Len := Length(Trk.Data[Length(Trk.Data)-1].DataArray);
+                  Log.Lines.Add('[-] Error: Incomplete event data (end of track reached).');
+                  Break;
+                end;
+                SetLength(Trk.Data[Length(Trk.Data)-1].DataArray,
+                Length(Trk.Data[Length(Trk.Data)-1].DataArray)+1);
+                Trk.Data[Length(Trk.Data)-1].DataArray[Length(Trk.Data[Length(Trk.Data)-1].DataArray)-1]:=B;
+              end;
+          end;
+          1: begin // QuarterFrame
+            ReadBuf(B, 1);
+            if B>127 then begin
+              Log.Lines.Add('[-] Error: Parameter greater than 127 at offset '+IntToStr(F.Position-1)+'.');
+              B:=127;
+            end;
+            Trk.Data[Length(Trk.Data)-1].BParm1:=B;
+          end;
+          2: begin // PSongPos
+            ReadBuf(B, 1);
+            if B>127 then begin
+              Log.Lines.Add('[-] Error: Parameter greater than 127 at offset '+IntToStr(F.Position-1)+'.');
+              B:=127;
+            end;
+            Trk.Data[Length(Trk.Data)-1].BParm1:=B;
+            ReadBuf(B, 1);
+            if B>127 then begin
+              Log.Lines.Add('[-] Error: Parameter greater than 127 at offset '+IntToStr(F.Position-1)+'.');
+              B:=127;
+            end;
+            Trk.Data[Length(Trk.Data)-1].BParm2:=B;
+            Trk.Data[Length(Trk.Data)-1].Value:=
+            Trk.Data[Length(Trk.Data)-1].BParm1*128 +
+            Trk.Data[Length(Trk.Data)-1].BParm2;
+          end;
+          3: begin // SongSelect
+            ReadBuf(B, 1);
+            if B>127 then begin
+              Log.Lines.Add('[-] Error: Parameter greater than 127 at offset '+IntToStr(F.Position-1)+'.');
+              B:=127;
+            end;
+            Trk.Data[Length(Trk.Data)-1].BParm1:=B;
+          end;
+          6: ; // TuneRequest
+          7: ; // EOX
+          8: ; // TimingClock
+          10: ; // Start
+          11: ; // Continue
+          12: ; // Stop
+          14: ; // ActiveSens
+          15: begin // MetaEvnt
+            ReadBuf(B, 1);
+            if B>127 then begin
+              Log.Lines.Add('[-] Error: Parameter greater than 127 at offset '+IntToStr(F.Position-1)+'.');
+              B:=127;
+            end;
+            Trk.Data[Length(Trk.Data)-1].BParm1:=B;
+            case B of
+              0: begin  // Track Number
+                Trk.Data[Length(Trk.Data)-1].Len:=ReadVarVal(F, Err);
+                if Err=2 then begin
+                  Log.Lines.Add('[-] Error: Incomplete event (end of track reached).');
+                  SetLength(Trk.Data, Length(Trk.Data)-1);
+                  Log.Lines.Add('[+] Fixed.');
+                  Break;
+                end;
+                if Err=1 then begin
+                  Log.Lines.Add('[-] Error: Length overflow at offset '+IntToStr(F.Position)+'.');
+                  Trk.Data[Length(Trk.Data)-1].Len := 0;
+                end else
+                  for J:=0 to Trk.Data[Length(Trk.Data)-1].Len-1 do begin
+                    ReadBuf(B, 1);
+                    if J>0 then
+                      Trk.Data[Length(Trk.Data)-1].Value:=
+                      Trk.Data[Length(Trk.Data)-1].Value shl 8;
+                    Trk.Data[Length(Trk.Data)-1].Value:=
+                    Trk.Data[Length(Trk.Data)-1].Value or B;
+                  end;
+              end;
+              1..7: begin  // Text, Copyright, TrackName, InstrName, Lyrics, Marker, CuePoint
+                Trk.Data[Length(Trk.Data)-1].Len:=ReadVarVal(F, Err);
+                if Err=2 then begin
+                  Log.Lines.Add('[-] Error: Incomplete event (end of track reached).');
+                  SetLength(Trk.Data, Length(Trk.Data)-1);
+                  Log.Lines.Add('[+] Fixed.');
+                  Break;
+                end;
+                if Err=1 then begin
+                  Log.Lines.Add('[-] Error: Length overflow at offset '+IntToStr(F.Position)+'.');
+                  Trk.Data[Length(Trk.Data)-1].Len := 0;
+                end else begin
+                  Buf:=AllocMem(Trk.Data[Length(Trk.Data)-1].Len + 1);
+                  ZeroMemory(Buf, Trk.Data[Length(Trk.Data)-1].Len + 1);
+                  ReadBuf(Buf^, Trk.Data[Length(Trk.Data)-1].Len);
+                  Trk.Data[Length(Trk.Data)-1].DataString:=PAnsiChar(Buf);
+                  FreeMem(Buf, Trk.Data[Length(Trk.Data)-1].Len + 1);
+                end;
+                if Trk.Data[Length(Trk.Data)-1].BParm1=3 then
+                  if (Trk.Title='') and
+                  (Trk.Data[Length(Trk.Data)-1].DataString<>'') then
+                    Trk.Title:=Trk.Data[Length(Trk.Data)-1].DataString;
+              end;
+              32: begin // MIDI Channel
+                Trk.Data[Length(Trk.Data)-1].Len:=ReadVarVal(F, Err);
+                if Err=2 then begin
+                  Log.Lines.Add('[-] Error: Incomplete event (end of track reached).');
+                  SetLength(Trk.Data, Length(Trk.Data)-1);
+                  Log.Lines.Add('[+] Fixed.');
+                  Break;
+                end;
+                if Err=1 then begin
+                  Log.Lines.Add('[-] Error: Length overflow at offset '+IntToStr(F.Position)+'.');
+                  Trk.Data[Length(Trk.Data)-1].Len := 0;
+                end else begin
+                  for J:=0 to Trk.Data[Length(Trk.Data)-1].Len-1 do begin
+                    ReadBuf(B, 1);
+                    if J>0 then
+                      Trk.Data[Length(Trk.Data)-1].Value:=
+                      Trk.Data[Length(Trk.Data)-1].Value shl 8;
+                    Trk.Data[Length(Trk.Data)-1].Value:=
+                    Trk.Data[Length(Trk.Data)-1].Value or B;
+                  end;
+                  if not (Trk.Data[Length(Trk.Data)-1].Value in [0..15]) then begin
+                    Log.Lines.Add('[-] Error: MIDI Channel is wrong at offset '+IntToStr(F.Position-Trk.Data[Length(Trk.Data)-1].Len)+'.');
+                    Trk.Data[Length(Trk.Data)-1].Len:=1;
+                    Trk.Data[Length(Trk.Data)-1].Value:=0;
+                    Log.Lines.Add('[+] Fixed.');
+                  end;
+                end;
+              end;
+              33: begin // MIDI Port
+                Trk.Data[Length(Trk.Data)-1].Len:=ReadVarVal(F, Err);
+                if Err=2 then begin
+                  Log.Lines.Add('[-] Error: Incomplete event (end of track reached).');
+                  SetLength(Trk.Data, Length(Trk.Data)-1);
+                  Log.Lines.Add('[+] Fixed.');
+                  Break;
+                end;
+                if Err=1 then begin
+                  Log.Lines.Add('[-] Error: Length overflow at offset '+IntToStr(F.Position)+'.');
+                  Trk.Data[Length(Trk.Data)-1].Len := 0;
+                end else
+                  for J:=0 to Trk.Data[Length(Trk.Data)-1].Len-1 do begin
+                    ReadBuf(B, 1);
+                    if J>0 then
+                      Trk.Data[Length(Trk.Data)-1].Value:=
+                      Trk.Data[Length(Trk.Data)-1].Value shl 8;
+                    Trk.Data[Length(Trk.Data)-1].Value:=
+                    Trk.Data[Length(Trk.Data)-1].Value or B;
+                  end;
+              end;
+              81: begin  // Tempo
+                Trk.Data[Length(Trk.Data)-1].Len:=ReadVarVal(F, Err);
+                if Err=2 then begin
+                  Log.Lines.Add('[-] Error: Incomplete event (end of track reached).');
+                  SetLength(Trk.Data, Length(Trk.Data)-1);
+                  Log.Lines.Add('[+] Fixed.');
+                  Break;
+                end;
+                if Err=1 then begin
+                  Log.Lines.Add('[-] Error: Length overflow at offset '+IntToStr(F.Position)+'.');
+                  Trk.Data[Length(Trk.Data)-1].Len := 0;
+                end else
+                  for J:=0 to Trk.Data[Length(Trk.Data)-1].Len-1 do begin
+                    ReadBuf(B, 1);
+                    if J>0 then
+                      Trk.Data[Length(Trk.Data)-1].Value:=
+                      Trk.Data[Length(Trk.Data)-1].Value shl 8;
+                    Trk.Data[Length(Trk.Data)-1].Value:=
+                    Trk.Data[Length(Trk.Data)-1].Value or B;
+                  end;
+              end;
+              84: begin  // SMPTE Offset
+                Trk.Data[Length(Trk.Data)-1].Len:=ReadVarVal(F, Err);
+                if Err=2 then begin
+                  Log.Lines.Add('[-] Error: Incomplete event (end of track reached).');
+                  SetLength(Trk.Data, Length(Trk.Data)-1);
+                  Log.Lines.Add('[+] Fixed.');
+                  Break;
+                end;
+                if Err=1 then begin
+                  Log.Lines.Add('[-] Error: Length overflow at offset '+IntToStr(F.Position)+'.');
+                  Trk.Data[Length(Trk.Data)-1].Len := 0;
+                end else begin
+                  if Trk.Data[Length(Trk.Data)-1].Len<>5 then
+                    Log.Lines.Add('[-] Error: SMPTE Offset is wrong formatted at offset '+IntToStr(F.Position-Trk.Data[Length(Trk.Data)-1].Len)+'.');
+                  for J:=0 to Trk.Data[Length(Trk.Data)-1].Len-1 do begin
+                    SetLength(Trk.Data[Length(Trk.Data)-1].DataArray,
+                    Length(Trk.Data[Length(Trk.Data)-1].DataArray)+1);
+                    ReadBuf(B, 1);
+                    Trk.Data[Length(Trk.Data)-1].DataArray[Length(Trk.Data[Length(Trk.Data)-1].DataArray)-1]:=B;
+                  end;
+                  if Trk.Data[Length(Trk.Data)-1].Len<5 then begin
+                    SetLength(Trk.Data[Length(Trk.Data)-1].DataArray, 5);
+                    for J:=Trk.Data[Length(Trk.Data)-1].Len to 4 do
+                      Trk.Data[Length(Trk.Data)-1].DataArray[J]:=0;
+                    Trk.Data[Length(Trk.Data)-1].Len:=5;
+                    Log.Lines.Add('[+] Fixed.');
+                  end;
+                  if Trk.Data[Length(Trk.Data)-1].Len>5 then begin
+                    SetLength(Trk.Data[Length(Trk.Data)-1].DataArray, 5);
+                    Trk.Data[Length(Trk.Data)-1].Len:=5;
+                    Log.Lines.Add('[+] Fixed.');
+                  end;
+                end;
+              end;
+              88: begin  // TimeSignature
+                Trk.Data[Length(Trk.Data)-1].Len:=ReadVarVal(F, Err);
+                if Err=2 then begin
+                  Log.Lines.Add('[-] Error: Incomplete event (end of track reached).');
+                  SetLength(Trk.Data, Length(Trk.Data)-1);
+                  Log.Lines.Add('[+] Fixed.');
+                  Break;
+                end;
+                if Err=1 then begin
+                  Log.Lines.Add('[-] Error: Length overflow at offset '+IntToStr(F.Position)+'.');
+                  Trk.Data[Length(Trk.Data)-1].Len := 0;
+                end else begin
+                  if Trk.Data[Length(Trk.Data)-1].Len<>4 then
+                    Log.Lines.Add('[-] Error: Time Signature is wrong formatted at offset '+IntToStr(F.Position-Trk.Data[Length(Trk.Data)-1].Len)+'.');
+                  for J:=0 to Trk.Data[Length(Trk.Data)-1].Len-1 do begin
+                    SetLength(Trk.Data[Length(Trk.Data)-1].DataArray,
+                    Length(Trk.Data[Length(Trk.Data)-1].DataArray)+1);
+                    ReadBuf(B, 1);
+                    Trk.Data[Length(Trk.Data)-1].DataArray[Length(Trk.Data[Length(Trk.Data)-1].DataArray)-1]:=B;
+                  end;
+                  if Trk.Data[Length(Trk.Data)-1].Len<4 then begin
+                    SetLength(Trk.Data[Length(Trk.Data)-1].DataArray, 4);
+                    for J:=Trk.Data[Length(Trk.Data)-1].Len to 3 do
+                      Trk.Data[Length(Trk.Data)-1].DataArray[J]:=0;
+                    Trk.Data[Length(Trk.Data)-1].Len:=4;
+                    Log.Lines.Add('[+] Fixed.');
+                  end;
+                  if Trk.Data[Length(Trk.Data)-1].Len>4 then begin
+                    SetLength(Trk.Data[Length(Trk.Data)-1].DataArray, 4);
+                    Trk.Data[Length(Trk.Data)-1].Len:=4;
+                    Log.Lines.Add('[+] Fixed.');
+                  end;
+                end;
+              end;
+              89: begin  // KeySignature
+                Trk.Data[Length(Trk.Data)-1].Len:=ReadVarVal(F, Err);
+                if Err=2 then begin
+                  Log.Lines.Add('[-] Error: Incomplete event (end of track reached).');
+                  SetLength(Trk.Data, Length(Trk.Data)-1);
+                  Log.Lines.Add('[+] Fixed.');
+                  Break;
+                end;
+                if Err=1 then begin
+                  Log.Lines.Add('[-] Error: Length overflow at offset '+IntToStr(F.Position)+'.');
+                  Trk.Data[Length(Trk.Data)-1].Len := 0;
+                end else begin
+                  if Trk.Data[Length(Trk.Data)-1].Len<>2 then
+                    Log.Lines.Add('[-] Error: Key Signature is wrong formatted at offset '+IntToStr(F.Position-Trk.Data[Length(Trk.Data)-1].Len)+'.');
+                  for J:=0 to Trk.Data[Length(Trk.Data)-1].Len-1 do begin
+                    SetLength(Trk.Data[Length(Trk.Data)-1].DataArray,
+                    Length(Trk.Data[Length(Trk.Data)-1].DataArray)+1);
+                    ReadBuf(B, 1);
+                    Trk.Data[Length(Trk.Data)-1].DataArray[Length(Trk.Data[Length(Trk.Data)-1].DataArray)-1]:=B;
+                  end;
+                  if Trk.Data[Length(Trk.Data)-1].Len<2 then begin
+                    SetLength(Trk.Data[Length(Trk.Data)-1].DataArray, 2);
+                    for J:=Trk.Data[Length(Trk.Data)-1].Len to 1 do
+                      Trk.Data[Length(Trk.Data)-1].DataArray[J]:=0;
+                    Trk.Data[Length(Trk.Data)-1].Len:=2;
+                    Log.Lines.Add('[+] Fixed.');
+                  end;
+                  if Trk.Data[Length(Trk.Data)-1].Len>2 then begin
+                    SetLength(Trk.Data[Length(Trk.Data)-1].DataArray, 2);
+                    Trk.Data[Length(Trk.Data)-1].Len:=2;
+                    Log.Lines.Add('[+] Fixed.');
+                  end;
+                end;
+              end;
+              else begin
+                // Custom meta event
+                Trk.Data[Length(Trk.Data)-1].Len:=ReadVarVal(F, Err);
+                if Err=2 then begin
+                  Log.Lines.Add('[-] Error: Incomplete event (end of track reached).');
+                  SetLength(Trk.Data, Length(Trk.Data)-1);
+                  Log.Lines.Add('[+] Fixed.');
+                  Break;
+                end;
+                if Err=1 then begin
+                  Log.Lines.Add('[-] Error: Length overflow at offset '+IntToStr(F.Position)+'.');
+                  Trk.Data[Length(Trk.Data)-1].Len := 0;
+                end else
+                  for J:=0 to Trk.Data[Length(Trk.Data)-1].Len-1 do begin
+                    ReadBuf(B, 1);
+                    if F.Position >= F.Size then begin
+                      Trk.Data[Length(Trk.Data)-1].Len := Length(Trk.Data[Length(Trk.Data)-1].DataArray);
+                      Log.Lines.Add('[-] Error: Incomplete event data (end of track reached).');
+                      Break;
+                    end;
+                    SetLength(Trk.Data[Length(Trk.Data)-1].DataArray,
+                    Length(Trk.Data[Length(Trk.Data)-1].DataArray)+1);
+                    Trk.Data[Length(Trk.Data)-1].DataArray[Length(Trk.Data[Length(Trk.Data)-1].DataArray)-1]:=B;
+                  end;
+              end;
+            end;
+          end;
+        end;
+      end;
+    end;
+  end;
+end;
+
 procedure TMainForm.ReadTrackData_MUS(var F: TMemoryStream; var Trk: Chunk);
 var
   J: Integer;
@@ -1939,9 +2544,14 @@ begin
               0: begin // SysEx / Set Speed
                 Trk.Data[Length(Trk.Data)-1].Len := 0;
                 repeat
+                  ReadBuf(B, 1);
+                  if F.Position >= F.Size then begin
+                    Trk.Data[Length(Trk.Data)-1].Len := Length(Trk.Data[Length(Trk.Data)-1].DataArray);
+                    Log.Lines.Add('[-] Error: Incomplete event data (end of track reached).');
+                    Break;
+                  end;
                   SetLength(Trk.Data[Length(Trk.Data)-1].DataArray,
                   Length(Trk.Data[Length(Trk.Data)-1].DataArray)+1);
-                  ReadBuf(B, 1);
                   Trk.Data[Length(Trk.Data)-1].DataArray[Length(Trk.Data[Length(Trk.Data)-1].DataArray)-1] := B;
                 until B = $F7;
                 Trk.Data[Length(Trk.Data)-1].Len :=
@@ -3685,18 +4295,22 @@ begin
     MSplit3.Enabled:=(Length(TrackData[TrkCh.ItemIndex].Data)>0);
   end;
   MFormatMID.Enabled := True;
+  MFormatXMI.Enabled := True;
   MFormatMUS.Enabled := True;
   MFormatMDI.Enabled := True;
   MFormatCMF.Enabled := True;
   MFormatMID.Checked := False;
+  MFormatXMI.Checked := False;
   MFormatMUS.Checked := False;
   MFormatMDI.Checked := False;
   MFormatCMF.Checked := False;
   MProfileMID.Enabled := True;
+  MProfileXMI.Enabled := True;
   MProfileMUS.Enabled := True;
   MProfileMDI.Enabled := True;
   MProfileCMF.Enabled := True;
   MProfileMID.Checked := False;
+  MProfileXMI.Checked := False;
   MProfileMUS.Checked := False;
   MProfileMDI.Checked := False;
   MProfileCMF.Checked := False;
@@ -3707,6 +4321,14 @@ begin
   if EventViewProfile = 'mid' then begin
     MProfileMID.Checked := True;
     MProfileMID.Enabled := False;
+  end;
+  if EventProfile = 'xmi' then begin
+    MFormatXMI.Checked := True;
+    MFormatXMI.Enabled := False;
+  end;
+  if EventViewProfile = 'xmi' then begin
+    MProfileXMI.Checked := True;
+    MProfileXMI.Enabled := False;
   end;
   if EventProfile = 'mus' then begin
     MFormatMUS.Checked := True;
@@ -4545,6 +5167,7 @@ var
   NewMIDIOut: THandle;
   Ver, Division: Word;
   InitTempo: Cardinal;
+  UseTempo: Boolean;
   Tempo, MSPT: Cardinal;
 
   procedure MixType0;
@@ -4606,8 +5229,10 @@ var
               case PlayData[I].BParm1 of
                 // Tempo
                 81: begin
-                  Tempo := PlayData[I].Value;
-                  MSPT := Round(Tempo / Division);
+                  if UseTempo then begin
+                    Tempo := PlayData[I].Value;
+                    MSPT := Round(Tempo / Division);
+                  end;
                 end;
               end;
             end;
@@ -4731,8 +5356,10 @@ var
               case PlayData[I].BParm1 of
                 // Tempo
                 81: begin
-                  Tempo := PlayData[I].Value;
-                  MSPT := Round(Tempo / Division);
+                  if UseTempo then begin
+                    Tempo := PlayData[I].Value;
+                    MSPT := Round(Tempo / Division);
+                  end;
                 end;
               end;
             end;
@@ -4820,8 +5447,10 @@ var
                 case PlayData[Idx].BParm1 of
                   // Tempo
                   81: begin
-                    Tempo := PlayData[Idx].Value;
-                    MSPT := Round(Tempo / Division);
+                    if UseTempo then begin
+                      Tempo := PlayData[Idx].Value;
+                      MSPT := Round(Tempo / Division);
+                    end;
                   end;
                 end;
               end;
@@ -4874,6 +5503,7 @@ begin
   SetLength(PlayData, 0);
   Tempo := InitTempo;
   MSPT := Round(Tempo / Division);
+  UseTempo := EventProfile <> 'xmi';
   LoopPoint := 0;
   LoopEnd := -1;
   case Ver of
@@ -4926,6 +5556,11 @@ begin
       EventFormat := 'mid';
       EventProfile := 'mid';
     end;
+    if (Ext = '.xmi') then begin
+      Container := 'xmi';
+      EventFormat := 'xmi';
+      EventProfile := 'xmi';
+    end;
     if (Ext = '.cmf') then begin
       Container := 'cmf';
       EventFormat := 'mid';
@@ -4962,6 +5597,11 @@ begin
       Container := 'mids';
       EventFormat := 'mid';
       EventProfile := 'mid';
+    end;
+    if Fmt = 'xmi' then begin
+      Container := 'xmi';
+      EventFormat := 'xmi';
+      EventProfile := 'xmi';
     end;
     if Fmt = 'cmf' then begin
       Container := 'cmf';
@@ -5011,6 +5651,9 @@ begin
     end;
     if Container = 'mids' then begin
       Opened := ReadMIDS(M);
+    end;
+    if Container = 'xmi' then begin
+      Opened := ReadXMI(M);
     end;
     if Container = 'cmf' then begin
       //Opened := ReadCMF(M);
@@ -5167,6 +5810,8 @@ begin
       Fmt := 'rmi';
     if Pos('*.mds', FilterExt) > 0 then
       Fmt := 'mids';
+    if Pos('*.xmi', FilterExt) > 0 then
+      Fmt := 'xmi';
     if Pos('*.cmf', FilterExt) > 0 then
       Fmt := 'cmf';
     if Pos('*.mus', FilterExt) > 0 then
@@ -5289,6 +5934,19 @@ var
 begin
   Idx := TrkCh.ItemIndex;
   ConvertEvents('cmf');
+  RefTrackList;
+  TrkCh.ItemIndex := Idx;
+  FillEvents(TrkCh.ItemIndex);
+  CalculateEvnts;
+  ChkButtons;
+end;
+
+procedure TMainForm.MFormatXMIClick(Sender: TObject);
+var
+  Idx: Integer;
+begin
+  Idx := TrkCh.ItemIndex;
+  ConvertEvents('xmi');
   RefTrackList;
   TrkCh.ItemIndex := Idx;
   FillEvents(TrkCh.ItemIndex);
@@ -5579,6 +6237,24 @@ begin
         end; // system event type
       end; // system event
     end; // status byte check
+
+    if EventViewProfile = 'xmi' then begin
+      case TrackData[Idx].Data[I].Status shr 4 of
+        8: // Note Off (unused)
+          Events.Cells[4,I+1] := 'Ignored';
+        9: // XMI Note
+        begin
+          Events.Cells[3,I+1] := 'Play Note';
+          Events.Cells[4,I+1] := Events.Cells[4,I+1] +
+          ', duration = ' + IntToStr(TrackData[Idx].Data[I].Len);
+        end;
+        15: // System
+          case TrackData[Idx].Data[I].BParm1 of
+            81: // Tempo
+              Events.Cells[4,I+1] := Events.Cells[4,I+1] + ' (ignored)';
+          end;
+      end;
+    end;
 
     if EventViewProfile = 'mus' then begin
       case TrackData[Idx].Data[I].Status shr 4 of
@@ -6437,6 +7113,14 @@ end;
 procedure TMainForm.MProfileMIDClick(Sender: TObject);
 begin
   EventViewProfile := 'mid';
+  FillEvents(TrkCh.ItemIndex);
+  CalculateEvnts;
+  ChkButtons;
+end;
+
+procedure TMainForm.MProfileXMIClick(Sender: TObject);
+begin
+  EventViewProfile := 'xmi';
   FillEvents(TrkCh.ItemIndex);
   CalculateEvnts;
   ChkButtons;
