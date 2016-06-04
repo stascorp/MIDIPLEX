@@ -473,6 +473,7 @@ type
     procedure WriteTrackData_MUS(var F: TMemoryStream; var Trk: Chunk);
     procedure WriteTrackData_SYX(var F: TMemoryStream; var Trk: Chunk);
     procedure ConvertEvents(DestProfile: AnsiString);
+    procedure Convert_XMI_MID;
     procedure Convert_MUS_MID;
     procedure Convert_MUS_MDI;
     procedure Convert_MDI_MID;
@@ -3182,6 +3183,134 @@ begin
     end;
 end;
 
+procedure TMainForm.Convert_XMI_MID;
+type
+  NoteDur = packed record
+    Chn: Byte;
+    Note: Byte;
+    Ticks: UInt64;
+  end;
+  PNoteDur = ^NoteDur;
+var
+  I,J,K: Integer;
+  Durations: TList;
+  PDur: PNoteDur;
+  MinDur: UInt64;
+  MinDurFirst: Boolean;
+begin
+  Log.Lines.Add('[*] Converting Extended MIDI to Standard MIDI...');
+  Application.ProcessMessages;
+  for I := 0 to Length(TrackData)-1 do
+  begin
+    J := 0;
+    Durations := TList.Create;
+    while J < Length(TrackData[I].Data) do
+    begin
+      while TrackData[I].Data[J].Ticks > 0 do
+      begin
+        // Find notes with minimum duration
+        // which can be turned off now
+        MinDur := High(UInt64);
+        for K := 0 to Durations.Count - 1 do
+        begin
+          PDur := Durations[K];
+          if (PDur^.Ticks <= TrackData[I].Data[J].Ticks)
+          and (PDur^.Ticks < MinDur) then
+            MinDur := PDur^.Ticks;
+        end;
+        if MinDur < High(UInt64) then
+        begin
+          // Found notes which needs to off
+          K := 0;
+          MinDurFirst := True;
+          while K < Durations.Count do
+          begin
+            PDur := Durations[K];
+            if PDur^.Ticks = MinDur then
+            begin
+              // Adding NoteOff event
+              NewEvent(I, J, $80, 0);
+              TrackData[I].Data[J].Status := $80 or (PDur^.Chn and $F);
+              TrackData[I].Data[J].BParm1 := PDur^.Note;
+              if MinDurFirst then
+                TrackData[I].Data[J].Ticks := PDur^.Ticks
+              else
+                TrackData[I].Data[J].Ticks := 0;
+              Inc(J);
+              MinDurFirst := False;
+              Dispose(PDur);
+              Durations.Delete(K);
+              Continue;
+            end;
+            // Decreasing duration
+            PDur^.Ticks := PDur^.Ticks - MinDur;
+            Inc(K);
+          end;
+          TrackData[I].Data[J].Ticks := TrackData[I].Data[J].Ticks - MinDur;
+        end
+        else
+        begin
+          for K := 0 to Durations.Count - 1 do
+          begin
+            // Decrease all durations by ticks
+            PDur := Durations[K];
+            PDur^.Ticks := PDur^.Ticks - TrackData[I].Data[J].Ticks;
+          end;
+          Break;
+        end;
+      end;
+
+      case TrackData[I].Data[J].Status shr 4 of
+        8: begin // Note Off - unused
+          DelEvent(I, J, True);
+          Continue;
+        end;
+        9: begin // XMI Note
+          // Read note duration
+          if TrackData[I].Data[J].Len = 0 then
+          begin
+            // Adding NoteOff event
+            NewEvent(I, J+1, $80, 0);
+            TrackData[I].Data[J+1].Status := $80 or (TrackData[I].Data[J].Status and $F);
+            TrackData[I].Data[J+1].BParm1 := TrackData[I].Data[J].BParm1;
+            Inc(J);
+          end
+          else
+          begin
+            PDur := New(PNoteDur);
+            PDur^.Chn := TrackData[I].Data[J].Status and $F;
+            PDur^.Note := TrackData[I].Data[J].BParm1;
+            PDur^.Ticks := TrackData[I].Data[J].Len;
+            Durations.Add(PDur);
+            TrackData[I].Data[J].Len := 0;
+          end;
+        end;
+        15: begin
+          if TrackData[I].Data[J].Status = $FF then
+            case TrackData[I].Data[J].BParm1 of
+              81: // Tempo - unused
+              begin
+                DelEvent(I, J, True);
+                Continue;
+              end;
+            end;
+        end;
+      end;
+      Inc(J);
+    end;
+    if Durations.Count > 0 then
+      Log.Lines.Add('[*] Warning: There are '+IntToStr(Durations.Count)+' active notes at track end.');
+    for J := 0 to Durations.Count - 1 do
+    begin
+      PDur := Durations[J];
+      Dispose(PDur);
+    end;
+    Durations.Free;
+    Log.Lines.Add('[+] Track #'+IntToStr(I)+': '+IntToStr(Length(TrackData[I].Data))+' events converted.');
+  end;
+  Log.Lines.Add('[+] Done.');
+end;
+
 procedure TMainForm.Convert_MUS_MID;
 var
   InitTempo: Cardinal;
@@ -3670,7 +3799,11 @@ begin
               TrackData[I].Data[J].BParm2 := 0;
               SetNoteOff(K, Notes[K][0]);
               for K := 1 to Length(Notes[TrackData[I].Data[J].Status and $F]) - 1 do
-                NewEvent(I, J+K, TrackData[I].Data[J].Status, Notes[TrackData[I].Data[J].Status and $F][K]);
+              begin
+                NewEvent(I, J+K, TrackData[I].Data[J].Status, 0);
+                TrackData[I].Data[J+K].Status := TrackData[I].Data[J].Status;
+                TrackData[I].Data[J+K].BParm1 := Notes[TrackData[I].Data[J].Status and $F][K];
+              end;
             end;
           end
           else // Normal Note Off
@@ -6249,10 +6382,11 @@ begin
           ', duration = ' + IntToStr(TrackData[Idx].Data[I].Len);
         end;
         15: // System
-          case TrackData[Idx].Data[I].BParm1 of
-            81: // Tempo
-              Events.Cells[4,I+1] := Events.Cells[4,I+1] + ' (ignored)';
-          end;
+          if TrackData[Idx].Data[I].Status = $FF then // Meta
+            case TrackData[Idx].Data[I].BParm1 of
+              81: // Tempo
+                Events.Cells[4,I+1] := Events.Cells[4,I+1] + ' (ignored)';
+            end;
       end;
     end;
 
@@ -6893,6 +7027,13 @@ begin
   if EventProfile = 'mdi' then begin
     if DestProfile = 'mid' then begin
       Convert_MDI_MID;
+      EventProfile := 'mid';
+      EventViewProfile := 'mid';
+    end;
+  end;
+  if EventProfile = 'xmi' then begin
+    if DestProfile = 'mid' then begin
+      Convert_XMI_MID;
       EventProfile := 'mid';
       EventViewProfile := 'mid';
     end;
