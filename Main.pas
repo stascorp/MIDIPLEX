@@ -6381,6 +6381,45 @@ begin
           Events.Cells[4,I+1] := Events.Cells[4,I+1] +
           ', duration = ' + IntToStr(TrackData[Idx].Data[I].Len);
         end;
+        11: // Control Change
+        begin
+          case TrackData[Idx].Data[I].BParm1 of
+            32:  Events.Cells[3,I+1] := 'Control: AIL sysex start address MSB (queue 0)';
+            33:  Events.Cells[3,I+1] := 'Control: AIL sysex start address KSB (queue 0)';
+            34:  Events.Cells[3,I+1] := 'Control: AIL sysex start address LSB (queue 0)';
+            35:  Events.Cells[3,I+1] := 'Control: AIL sysex data byte (queue 0)';
+            36:  Events.Cells[3,I+1] := 'Control: AIL final sysex data byte (queue 0)';
+            37:  Events.Cells[3,I+1] := 'Control: AIL sysex start address MSB (queue 1)';
+            38:  Events.Cells[3,I+1] := 'Control: AIL sysex start address KSB (queue 1)';
+            39:  Events.Cells[3,I+1] := 'Control: AIL sysex start address LSB (queue 1)';
+            40:  Events.Cells[3,I+1] := 'Control: AIL sysex data byte (queue 1)';
+            41:  Events.Cells[3,I+1] := 'Control: AIL final sysex data byte (queue 1)';
+            42:  Events.Cells[3,I+1] := 'Control: AIL sysex start address MSB (queue 2)';
+            43:  Events.Cells[3,I+1] := 'Control: AIL sysex start address KSB (queue 2)';
+            44:  Events.Cells[3,I+1] := 'Control: AIL sysex start address LSB (queue 2)';
+            45:  Events.Cells[3,I+1] := 'Control: AIL sysex data byte (queue 2)';
+            46:  Events.Cells[3,I+1] := 'Control: AIL final sysex data byte (queue 2)';
+
+            58:  Events.Cells[3,I+1] := 'Control: AIL Rhythm Setup Timbre';
+            59:  Events.Cells[3,I+1] := 'Control: AIL MT-32 Patch Reverb SW';
+            60:  Events.Cells[3,I+1] := 'Control: AIL MT-32 Pitch Bend range';
+            61:  Events.Cells[3,I+1] := 'Control: AIL MT-32 Reverb Mode';
+            62:  Events.Cells[3,I+1] := 'Control: AIL MT-32 Reverb Time';
+            63:  Events.Cells[3,I+1] := 'Control: AIL MT-32 Reverb Level';
+
+            110: Events.Cells[3,I+1] := 'Control: AIL Channel Release';
+            111: Events.Cells[3,I+1] := 'Control: AIL Channel Lock';
+            112: Events.Cells[3,I+1] := 'Control: AIL Voice Protection';
+            113: Events.Cells[3,I+1] := 'Control: AIL Timbre Protection';
+            114: Events.Cells[3,I+1] := 'Control: AIL Select Bank';
+            115: Events.Cells[3,I+1] := 'Control: AIL Indirect Prefix';
+            116: Events.Cells[3,I+1] := 'Control: AIL Loop Start';
+            117: Events.Cells[3,I+1] := 'Control: AIL Loop End';
+            118: Events.Cells[3,I+1] := 'Control: AIL Clear Beat Count';
+            119: Events.Cells[3,I+1] := 'Control: AIL Callback Trigger';
+            120: Events.Cells[3,I+1] := 'Control: AIL Sequence Index';
+          end;
+        end;
         15: // System
           if TrackData[Idx].Data[I].Status = $FF then // Meta
             case TrackData[Idx].Data[I].BParm1 of
