@@ -6155,11 +6155,29 @@ begin
 end;
 
 procedure TMainForm.FormCreate(Sender: TObject);
+var
+  Filter: TStringList;
+  AllStr: String;
+  I: Integer;
 begin
   imgVU.Canvas.Pen.Color := clBlack;
   imgVU.Canvas.Brush.Color := clBlack;
   imgVU.Canvas.FillRect(imgVU.Canvas.ClipRect);
+
   SongData := TValueListEditor.Create(nil);
+
+  Filter := TStringList.Create;
+  Filter.Delimiter := '|';
+  Filter.StrictDelimiter := True;
+  Filter.DelimitedText := OpenDialog.Filter;
+  AllStr := '';
+  for I := 1 to Filter.Count div 2 - 1 do
+    AllStr := AllStr + Filter[I*2 + 1] + ';';
+  Delete(AllStr, Length(AllStr), 1);
+  Filter.Free;
+  OpenDialog.Filter :=
+    StringReplace(OpenDialog.Filter, '||', '|'+AllStr+'|', []);
+
   ChkButtons;
 end;
 
