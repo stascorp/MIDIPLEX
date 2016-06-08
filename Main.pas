@@ -457,6 +457,7 @@ type
     function ReadRMI(var F: TMemoryStream): Boolean;
     function ReadMIDS(var F: TMemoryStream): Boolean;
     function ReadXMI(var F: TMemoryStream): Boolean;
+    function ReadCMF(var F: TMemoryStream): Boolean;
     function ReadMUS(var F: TMemoryStream; FileName: String): Boolean;
     function ReadRaw(var F: TMemoryStream): Boolean;
     function ReadSYX(var F: TMemoryStream): Boolean;
@@ -1205,6 +1206,195 @@ begin
     Log.Lines.Add('[+] '+IntToStr(Length(TrackData[High(TrackData)].Data))+' events found.');
   end;
   SongData_PutInt('MIDIType', 2);
+  Result := True;
+  Log.Lines.Add('');
+  Log.Lines.Add('[*] Information:');
+  LogSongInfo;
+  Progress.Position := 0;
+  Log.Lines.Add('');
+  RefTrackList;
+  CalculateEvnts;
+end;
+
+function TMainForm.ReadCMF(var F: TMemoryStream): Boolean;
+type
+  CMFInstrument = Array[0..15] of Byte;
+  {packed record
+    iModChar,
+    iCarChar,
+    iModScale,
+    iCarScale,
+    iModAttack,
+    iCarAttack,
+    iModSustain,
+    iCarSustain,
+    iModWaveSel,
+    iCarWaveSel,
+    iFeedback: Byte;
+    Pad1: DWord;
+    Pad2: Byte;
+  end;}
+var
+  DW: Cardinal;
+  W: Word;
+  iOffsetInstruments,
+  iOffsetMusic,
+  iTicksPerQuarter,
+  iTicksPerSecond,
+  iOffsetTitle,
+  iOffsetComposer,
+  iOffsetRemarks,
+  iInstrumentCount,
+  iTempo: Word;
+  iChannelInUse: Array[0..15] of Byte;
+  dwInstrumentSize,
+  dwDataSize: DWord;
+  Instruments: Array of CMFInstrument;
+  MIDIData: TMemoryStream;
+  S: String;
+  sTitle, sComposer, sRemarks: AnsiString;
+  I, J: Integer;
+begin
+  Result := False;
+  Log.Lines.Add('[*] Reading Creative Music File...');
+  if F.Size < 36 then begin
+    Log.Lines.Add('[-] Error: Wrong file size.');
+    Exit;
+  end;
+
+  F.Seek(0, soFromBeginning);
+  F.ReadBuffer(DW, 4);
+  if DW <> $464D5443 then begin // 'CTMF'
+    Log.Lines.Add('[-] Error: Wrong header signature.');
+    Exit;
+  end;
+  F.ReadBuffer(W, 2);
+  if (W <> $0100) and (W <> $0101) then begin
+    Log.Lines.Add('[-] Error: Unknown file version.');
+    Exit;
+  end;
+  SongData_PutInt('CMF_Version', W);
+
+  F.ReadBuffer(iOffsetInstruments, 2);
+  F.ReadBuffer(iOffsetMusic, 2);
+  F.ReadBuffer(iTicksPerQuarter, 2);
+  F.ReadBuffer(iTicksPerSecond, 2);
+  F.ReadBuffer(iOffsetTitle, 2);
+  F.ReadBuffer(iOffsetComposer, 2);
+  F.ReadBuffer(iOffsetRemarks, 2);
+  F.ReadBuffer(iChannelInUse, 16);
+  SongData_PutInt('CMF_TicksPerQuarter', iTicksPerQuarter);
+  SongData_PutInt('CMF_TicksPerSecond', iTicksPerSecond);
+
+  SongData_PutDWord('InitTempo', 500000);
+  SongData_PutInt('SMPTE', 0);
+  SongData_PutInt('Division', iTicksPerSecond div 2);
+
+  S := '';
+  for I := 0 to 15 do
+    S := S + IntToStr(iChannelInUse[I]) + ' ';
+  SongData_PutStr('CMF_ChannelInUse', S);
+
+  if W = $0100 then begin
+    iInstrumentCount := 0;
+    iTempo := 0;
+    F.ReadBuffer(iInstrumentCount, 1);
+  end else begin
+    F.ReadBuffer(iInstrumentCount, 2);
+    F.ReadBuffer(iTempo, 2);
+  end;
+
+  dwInstrumentSize := iInstrumentCount * 16;
+  if iOffsetInstruments > 0 then
+  begin
+    if iOffsetInstruments + dwInstrumentSize > F.Size then
+    begin
+      Log.Lines.Add('[*] Warning: Instrument section is truncated.');
+      if iOffsetInstruments >= F.Size then
+        dwInstrumentSize := 0
+      else
+        dwInstrumentSize := F.Size - iOffsetInstruments;
+    end;
+
+    SetLength(Instruments, iInstrumentCount);
+    FillChar(Instruments[0], iInstrumentCount * 16, 0);
+    if dwInstrumentSize > 0 then
+    begin
+      F.Seek(iOffsetInstruments, soFromBeginning);
+      F.ReadBuffer(Instruments[0], dwInstrumentSize);
+    end;
+  end else
+    iInstrumentCount := 0;
+
+  SongData_PutInt('CMF_Instruments', iInstrumentCount);
+  SongData_PutInt('CMF_Tempo', iTempo);
+
+  for I := 0 to Length(Instruments) - 1 do
+  begin
+    S := '';
+    for J := 0 to 10 do
+      S := S + IntToStr(Instruments[I][J]) + ' ';
+    SongData_PutStr('CMF_Inst#' + IntToStr(I), S);
+  end;
+
+  if iOffsetTitle >= F.Size then
+  begin
+    Log.Lines.Add('[*] Warning: Title string is out of file.');
+    iOffsetTitle := 0;
+  end;
+  if iOffsetTitle > 0 then
+    sTitle := PAnsiChar(Cardinal(F.Memory) + iOffsetTitle);
+
+  SongData_PutStr('CMF_Title', sTitle);
+
+  if iOffsetComposer >= F.Size then
+  begin
+    Log.Lines.Add('[*] Warning: Composer string is out of file.');
+    iOffsetComposer := 0;
+  end;
+  if iOffsetComposer > 0 then
+    sComposer := PAnsiChar(Cardinal(F.Memory) + iOffsetComposer);
+
+  SongData_PutStr('CMF_Composer', sComposer);
+
+  if iOffsetRemarks >= F.Size then
+  begin
+    Log.Lines.Add('[*] Warning: Remarks string is out of file.');
+    iOffsetRemarks := 0;
+  end;
+  if iOffsetRemarks > 0 then
+    sRemarks := PAnsiChar(Cardinal(F.Memory) + iOffsetRemarks);
+
+  SongData_PutStr('CMF_Remarks', sRemarks);
+
+  if iOffsetMusic >= F.Size then
+    iOffsetMusic := 0;
+  if iOffsetMusic > 0 then
+  begin
+    dwDataSize := F.Size - iOffsetMusic;
+    if iOffsetTitle >= iOffsetMusic then
+      dwDataSize := iOffsetTitle - iOffsetMusic
+    else if iOffsetComposer >= iOffsetMusic then
+      dwDataSize := iOffsetComposer - iOffsetMusic
+    else if iOffsetRemarks >= iOffsetMusic then
+      dwDataSize := iOffsetRemarks - iOffsetMusic
+    else if iOffsetInstruments >= iOffsetMusic then
+      dwDataSize := iOffsetInstruments - iOffsetMusic;
+
+    SetLength(TrackData, 1);
+    TrackData[0].Title := sTitle;
+    SetLength(TrackData[0].Data, 0);
+    MIDIData := TMemoryStream.Create;
+    MIDIData.SetSize(dwDataSize);
+    F.Seek(iOffsetMusic, soFromBeginning);
+    F.ReadBuffer(MIDIData.Memory^, dwDataSize);
+    ReadTrackData(MIDIData, TrackData[0]);
+    MIDIData.Free;
+    Log.Lines.Add('[+] '+IntToStr(Length(TrackData[0].Data))+' events found.');
+  end else
+    Log.Lines.Add('[*] Warning: Track data is missing.');
+
+  SongData_PutInt('MIDIType', 0);
   Result := True;
   Log.Lines.Add('');
   Log.Lines.Add('[*] Information:');
@@ -5789,7 +5979,7 @@ begin
       Opened := ReadXMI(M);
     end;
     if Container = 'cmf' then begin
-      //Opened := ReadCMF(M);
+      Opened := ReadCMF(M);
     end;
     if Container = 'mus' then begin
       Opened := ReadMUS(M, FileName);
