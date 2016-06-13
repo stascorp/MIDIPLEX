@@ -453,6 +453,13 @@ type
     { Public declarations }
     function LoadFile(FileName, Fmt: String): Boolean;
     function SaveFile(FileName: String): Boolean;
+    function DetectFile(var F: TMemoryStream): String;
+    function DetectMIDI(var F: TMemoryStream): Boolean;
+    function DetectRMI(var F: TMemoryStream): Boolean;
+    function DetectMIDS(var F: TMemoryStream): Boolean;
+    function DetectXMI(var F: TMemoryStream): Boolean;
+    function DetectCMF(var F: TMemoryStream): Boolean;
+    function DetectMUS(var F: TMemoryStream): Boolean;
     function ReadMIDI(var F: TMemoryStream): Boolean;
     function ReadRMI(var F: TMemoryStream): Boolean;
     function ReadMIDS(var F: TMemoryStream): Boolean;
@@ -772,6 +779,67 @@ begin
   #13#10 +
   'Software is licensed under GNU GPL v3, see LICENSE file.',
   'About', MB_ICONINFORMATION or MB_OK);
+end;
+
+function TMainForm.DetectMIDI(var F: TMemoryStream): Boolean;
+var
+  Head: Array[0..3] of AnsiChar;
+begin
+  Result := False;
+  if F.Size < 14 then
+    Exit;
+  F.Seek(0, soFromBeginning);
+  F.ReadBuffer(Head, 4);
+  Result := (Head = 'MThd') or (Head = 'MTrk');
+end;
+
+function TMainForm.DetectRMI(var F: TMemoryStream): Boolean;
+var
+  Nodes: IFFNodes;
+begin
+  IFFGetNodes('RIFF', F.Memory, 0, F.Size, Nodes);
+  Result := IFFSearchNode(Nodes, 'RIFF', 'RMID') > 0;
+end;
+
+function TMainForm.DetectMIDS(var F: TMemoryStream): Boolean;
+var
+  Nodes: IFFNodes;
+begin
+  IFFGetNodes('RIFF', F.Memory, 0, F.Size, Nodes);
+  Result := IFFSearchNode(Nodes, 'RIFF', 'MIDS') > 0;
+end;
+
+function TMainForm.DetectXMI(var F: TMemoryStream): Boolean;
+var
+  Nodes: IFFNodes;
+begin
+  IFFGetNodes('IFF', F.Memory, 0, F.Size, Nodes);
+  Result := (IFFSearchNode(Nodes, 'CAT ', 'XMID') > 0)
+         or (IFFSearchNode(Nodes, 'FORM', 'XMID') > 0);
+end;
+
+function TMainForm.DetectCMF(var F: TMemoryStream): Boolean;
+var
+  Head: Array[0..3] of AnsiChar;
+begin
+  Result := False;
+  if F.Size < 36 then
+    Exit;
+  F.Seek(0, soFromBeginning);
+  F.ReadBuffer(Head, 4);
+  Result := Head = 'CTMF';
+end;
+
+function TMainForm.DetectMUS(var F: TMemoryStream): Boolean;
+var
+  W: Word;
+begin
+  Result := False;
+  if F.Size < 70 then
+    Exit;
+  F.Seek(0, soFromBeginning);
+  F.ReadBuffer(W, 2);
+  Result := W = 1;
 end;
 
 function TMainForm.ReadMIDI(var F: TMemoryStream): Boolean;
@@ -1606,8 +1674,11 @@ begin
   SetLength(TrackData, 1);
   TrackData[0].Title := '';
   SetLength(TrackData[0].Data, 0);
+
+  F.Seek(0, soFromBeginning);
   if EventFormat = 'mid' then
     ReadTrackData(F, TrackData[0]);
+
   Log.Lines.Add('[+] '+IntToStr(Length(TrackData[0].Data))+' events found.');
   SongData_PutInt('MIDIType', 1);
   SongData_PutInt('SMPTE', 0);
@@ -1630,7 +1701,10 @@ begin
   SetLength(TrackData, 1);
   TrackData[0].Title := '';
   SetLength(TrackData[0].Data, 0);
+
+  F.Seek(0, soFromBeginning);
   ReadTrackData_SYX(F, TrackData[0]);
+
   Log.Lines.Add('[+] '+IntToStr(Length(TrackData[0].Data))+' events found.');
   SongData_PutInt('MIDIType', 1);
   SongData_PutInt('SMPTE', 0);
@@ -5952,7 +6026,6 @@ begin
       EventProfile := 'mid';
     end;
   end;
-  EventViewProfile := EventProfile;
 
   M := TMemoryStream.Create;
   try
@@ -5963,6 +6036,13 @@ begin
     Log.Lines.Add('[-] Load file failed.');
     Exit;
   end;
+  if Container = '' then
+  begin
+    // Detect container by data
+    Container := DetectFile(M);
+  end;
+  EventViewProfile := EventProfile;
+
   if Container <> '' then
   begin
     SongData.Strings.Clear;
@@ -6107,6 +6187,53 @@ begin
   FillEvents(TrkCh.ItemIndex);
   CalculateEvnts;
   ChkButtons;
+end;
+
+function TMainForm.DetectFile(var F: TMemoryStream): String;
+begin
+  Result := '';
+  if DetectMIDI(F) then
+  begin
+    Result := 'smf';
+    EventFormat := 'mid';
+    EventProfile := 'mid';
+    Exit;
+  end;
+  if DetectRMI(F) then
+  begin
+    Result := 'rmi';
+    EventFormat := 'mid';
+    EventProfile := 'mid';
+    Exit;
+  end;
+  if DetectMIDS(F) then
+  begin
+    Result := 'mids';
+    EventFormat := 'mid';
+    EventProfile := 'mid';
+    Exit;
+  end;
+  if DetectXMI(F) then
+  begin
+    Result := 'xmi';
+    EventFormat := 'xmi';
+    EventProfile := 'xmi';
+    Exit;
+  end;
+  if DetectCMF(F) then
+  begin
+    Result := 'cmf';
+    EventFormat := 'mid';
+    EventProfile := 'cmf';
+    Exit;
+  end;
+  if DetectMUS(F) then
+  begin
+    Result := 'mus';
+    EventFormat := 'mus';
+    EventProfile := 'mus';
+    Exit;
+  end;
 end;
 
 procedure TMainForm.BtOpenClick(Sender: TObject);
