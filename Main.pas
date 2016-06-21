@@ -474,6 +474,7 @@ type
     procedure ReadTrackData_MUS(var F: TMemoryStream; var Trk: Chunk);
     procedure ReadTrackData_SYX(var F: TMemoryStream; var Trk: Chunk);
     procedure WriteMIDI(var F: TMemoryStream);
+    procedure WriteRMI(var F: TMemoryStream);
     procedure WriteMUS(var F: TMemoryStream);
     procedure WriteRaw(var F: TMemoryStream);
     procedure WriteSYX(var F: TMemoryStream);
@@ -3132,7 +3133,7 @@ var
   TrkOffset: Cardinal;
   TrackStream: TMemoryStream;
 begin
-  Log.Lines.Add('[*] Writing header...');
+  Log.Lines.Add('[*] Writing MIDI header...');
   S := PAnsiChar(AnsiString(Header));
   F.WriteBuffer(S^, 4);
   C := $06000000;
@@ -3195,6 +3196,49 @@ begin
   end;
   Done:
   Progress.Position := 0;
+end;
+
+procedure TMainForm.WriteRMI(var F: TMemoryStream);
+const
+  RIFF = 'RIFF';
+  RMID = 'RMID';
+  data = 'data';
+var
+  dw: DWORD;
+  S: PAnsiChar;
+  MIDI: TMemoryStream;
+begin
+  Log.Lines.Add('[*] Writing RIFF header...');
+
+  S := PAnsiChar(AnsiString(RIFF));
+  F.WriteBuffer(S^, 4);
+  dw := 0;
+  F.WriteBuffer(dw, 4);
+  S := PAnsiChar(AnsiString(RMID));
+  F.WriteBuffer(S^, 4);
+  S := PAnsiChar(AnsiString(data));
+  F.WriteBuffer(S^, 4);
+
+  Log.Lines.Add('[*] Writing RIFF data...');
+
+  MIDI := TMemoryStream.Create;
+  WriteMIDI(MIDI);
+
+  dw := MIDI.Size;
+  F.WriteBuffer(dw, 4);
+  F.WriteBuffer(MIDI.Memory^, dw);
+  if Odd(dw) then
+  begin
+    dw := 0;
+    F.WriteBuffer(dw, 1);
+  end;
+
+  Log.Lines.Add('[*] Finalizing RIFF header...');
+
+  F.Seek(4, soFromBeginning);
+  dw := F.Size - 8;
+  F.WriteBuffer(dw, 4);
+  F.Seek(F.Size, soFromBeginning);
 end;
 
 procedure TMainForm.WriteMUS(var F: TMemoryStream);
@@ -6153,6 +6197,12 @@ begin
     WriteMIDI(M);
     Result := True;
   end;
+  if TargetContainer = 'rmi' then begin
+    if TargetEventProfile = 'mid' then
+      ConvertEvents('mid');
+    WriteRMI(M);
+    Result := True;
+  end;
   if TargetContainer = 'mus' then begin
     if TargetEventProfile = 'mus' then
       ConvertEvents('mus');
@@ -6163,7 +6213,7 @@ begin
     if TargetEventFormat = 'mid' then
       EventFormat := 'mid';
     if TargetEventProfile = 'mid' then
-      EventProfile := 'mid';
+      ConvertEvents('mid');
     WriteRaw(M);
     Result := True;
   end;
