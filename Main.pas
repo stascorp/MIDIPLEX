@@ -475,7 +475,7 @@ type
     procedure ReadTrackData_SYX(var F: TMemoryStream; var Trk: Chunk);
     procedure WriteMIDI(var F: TMemoryStream);
     procedure WriteRMI(var F: TMemoryStream);
-    procedure WriteMUS(var F: TMemoryStream);
+    procedure WriteMUS(var F: TMemoryStream; FileName: String);
     procedure WriteRaw(var F: TMemoryStream);
     procedure WriteSYX(var F: TMemoryStream);
     procedure WriteTrackData(var F: TMemoryStream; var Trk: Chunk);
@@ -1517,7 +1517,6 @@ begin
     Exit;
   end;
   SongData_PutInt('SND_Version', W);
-  SongData_PutInt('SND_Instruments', InstCnt);
   for I := 0 to InstCnt - 1 do
   begin
     M.ReadBuffer(Name[0], 9);
@@ -3256,12 +3255,77 @@ begin
   F.Seek(F.Size, soFromBeginning);
 end;
 
-procedure TMainForm.WriteMUS(var F: TMemoryStream);
+function MUS_SaveBank(FileName: String): Boolean;
+var
+  M: TMemoryStream;
+  W, InstCnt: Word;
+  I, J: Integer;
+  S: String;
+  A: AnsiString;
+  Name: Array[0..8] of AnsiChar;
+  SL: TStringList;
+begin
+  Result := False;
+  InstCnt := 0;
+  while SongData_GetStr('SND_Name#'+IntToStr(InstCnt), S)
+    and SongData_GetStr('SND_Data#'+IntToStr(InstCnt), S)
+  do
+    Inc(InstCnt);
+
+  if InstCnt = 0 then
+    Exit;
+
+  M := TMemoryStream.Create;
+  if not SongData_GetWord('SND_Version', W) then
+    W := 1;
+  M.WriteBuffer(W, 2);
+  M.WriteBuffer(InstCnt, 2);
+  W := InstCnt * 9 + 6;
+  M.WriteBuffer(W, 2);
+
+  for I := 0 to InstCnt - 1 do
+  begin
+    FillChar(Name, Length(Name), 0);
+    SongData_GetStr('SND_Name#'+IntToStr(I), S);
+    A := S;
+    Move(A[1], Name[0], Length(A));
+    M.WriteBuffer(Name, Length(Name));
+  end;
+
+  for I := 0 to InstCnt - 1 do
+  begin
+    SongData_GetStr('SND_Data#'+IntToStr(I), S);
+    SL := TStringList.Create;
+    SL.Delimiter := ' ';
+    SL.StrictDelimiter := True;
+    SL.DelimitedText := S;
+    for J := 0 to (13+13+2) - 1 do
+    begin
+      try
+        W := StrToInt(SL[J]);
+      except
+        W := 0;
+      end;
+      M.WriteBuffer(W, 2);
+    end;
+    SL.Free;
+  end;
+
+  Result := True;
+  try
+    M.SaveToFile(FileName);
+  except
+    Result := False;
+  end;
+  M.Free;
+end;
+
+procedure TMainForm.WriteMUS(var F: TMemoryStream; FileName: String);
 var
   I, J: Integer;
   dw, totalTick, nrCommand: DWORD;
   tuneName: Array[0..29] of AnsiChar;
-  S: String;
+  S, Bank: String;
   A: AnsiString;
   pad: Array[0..7] of Byte;
   MIDIData: TMemoryStream;
@@ -3356,8 +3420,16 @@ begin
   end;
   F.WriteBuffer(nrCommand, 4);
 
-  Progress.Position := 0;
   F.Seek(0, soFromEnd);
+
+  Log.Lines.Add('[*] Saving instrument bank file...');
+  Bank := ChangeFileExt(FileName, '.snd');
+  if not MUS_SaveBank(Bank) then
+    Log.Lines.Add('[-] Failed to save instrument bank file.')
+  else
+    Log.Lines.Add('[*] Saved instrument bank: ' + Bank);
+
+  Progress.Position := 0;
 end;
 
 procedure TMainForm.WriteRaw(var F: TMemoryStream);
@@ -6334,7 +6406,7 @@ begin
   if TargetContainer = 'mus' then begin
     if TargetEventProfile = 'mus' then
       ConvertEvents('mus');
-    WriteMUS(M);
+    WriteMUS(M, FileName);
     Result := True;
   end;
   if TargetContainer = 'raw' then begin
