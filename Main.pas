@@ -3258,14 +3258,106 @@ end;
 
 procedure TMainForm.WriteMUS(var F: TMemoryStream);
 var
-  I: Integer;
+  I, J: Integer;
+  dw, totalTick, nrCommand: DWORD;
+  tuneName: Array[0..29] of AnsiChar;
+  S: String;
+  A: AnsiString;
+  pad: Array[0..7] of Byte;
+  MIDIData: TMemoryStream;
 begin
   Log.Lines.Add('[*] Writing AdLib MUS file...');
-  // TODO write header
+
+  if not SongData_GetInt('MUS_Version', I) then
+    I := 1;
+  F.WriteBuffer(I, 2);
+  if not SongData_GetDWord('MUS_ID', dw) then
+    dw := 0;
+  F.WriteBuffer(dw, 4);
+
+  FillChar(tuneName, Length(tuneName), 0);
+  SongData_GetStr('MUS_TuneName', S);
+  if Length(S) > Length(tuneName) - 1 then
+    SetLength(S, Length(tuneName) - 1);
+  A := S;
+  Move(A[1], tuneName[0], Length(A));
+  F.WriteBuffer(tuneName[0], Length(tuneName));
+
+  if not SongData_GetInt('MUS_TicksPerBeat', I) then
+  begin
+    Log.Lines.Add('[-] Ticks Per Beat is not defined.');
+    Exit;
+  end;
+  F.WriteBuffer(I, 1);
+
+  if not SongData_GetInt('MUS_BeatPerMeasure', I) then
+  begin
+    Log.Lines.Add('[-] Warning: Beat Per Measure is not defined.');
+    I := 2;
+  end;
+  F.WriteBuffer(I, 1);
+
+  dw := 0;
+  F.WriteBuffer(dw, 4); // totalTick
+  F.WriteBuffer(dw, 4); // dataSize
+  F.WriteBuffer(dw, 4); // nrCommand
+
+  // Padding
+  FillChar(pad, 8, 0);
+  F.WriteBuffer(pad, 8);
+
+  if not SongData_GetInt('MUS_Percussive', I) then
+  begin
+    Log.Lines.Add('[-] Percussive is not defined.');
+    Exit;
+  end;
+  F.WriteBuffer(I, 1);
+
+  if not SongData_GetInt('MUS_PitchBendRange', I) then
+  begin
+    Log.Lines.Add('[-] Pitch Bend Range is not defined.');
+    Exit;
+  end;
+  F.WriteBuffer(I, 1);
+
+  if not SongData_GetInt('MUS_BasicTempo', I) then
+  begin
+    Log.Lines.Add('[-] Basic Tempo is not defined.');
+    Exit;
+  end;
+  F.WriteBuffer(I, 2);
+
+  // Padding
+  F.WriteBuffer(pad, 8);
+
+  // MIDI Track
+  MIDIData := TMemoryStream.Create;
   I := TrkCh.ItemIndex;
-  WriteTrackData_MUS(F, TrackData[I]);
-  Log.Lines.Add('[+] Wrote ' + IntToStr(F.Size) + ' bytes.');
+  WriteTrackData_MUS(MIDIData, TrackData[I]);
+  dw := MIDIData.Size;
+  F.WriteBuffer(MIDIData.Memory^, dw);
+  MIDIData.Free;
+  Log.Lines.Add('[+] Wrote ' + IntToStr(dw) + ' bytes.');
+
+  F.Seek($26, soFromBeginning);
+  totalTick := 0;
+  for J := 0 to Length(TrackData[I].Data) - 1 do
+    totalTick := totalTick + TrackData[I].Data[J].Ticks;
+  F.WriteBuffer(totalTick, 4);
+
+  F.WriteBuffer(dw, 4); // dataSize
+
+  nrCommand := 0;
+  for J := 0 to Length(TrackData[I].Data) - 1 do
+  begin
+    if TrackData[I].Data[J].Ticks >= 240 then
+      nrCommand := nrCommand + TrackData[I].Data[J].Ticks div 240;
+    Inc(nrCommand);
+  end;
+  F.WriteBuffer(nrCommand, 4);
+
   Progress.Position := 0;
+  F.Seek(0, soFromEnd);
 end;
 
 procedure TMainForm.WriteRaw(var F: TMemoryStream);
@@ -7128,6 +7220,13 @@ begin
     )
     then
       FileName := FileName + '.rmi';
+  end;
+  if Pos('*.mus', FilterExt) > 0 then
+  begin
+    if (ExtractFileExt(FileName) = '')
+    or (LowerCase(ExtractFileExt(FileName)) <> '.mus')
+    then
+      FileName := FileName + '.mus';
   end;
   if Pos('*.mdi', FilterExt) > 0 then
   begin

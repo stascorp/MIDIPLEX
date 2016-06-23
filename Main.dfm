@@ -1434,8 +1434,9 @@ object MainForm: TMainForm
   object SaveDialog: TSaveDialog
     Filter = 
       'Standard MIDI (*.mid;*.midi;*.kar)|*.mid;*.midi;*.kar|RIFF MIDI ' +
-      '(*.rmi;*.rmid)|*.rmi;*.rmid|AdLib MDI (*.mdi)|*.mdi|Raw MIDI dat' +
-      'a (Standard)|*.raw|System Exclusive data|*.syx'
+      '(*.rmi;*.rmid)|*.rmi;*.rmid|AdLib MUS (*.mus)|*.mus|AdLib MDI (*' +
+      '.mdi)|*.mdi|Raw MIDI data (Standard)|*.raw|System Exclusive data' +
+      '|*.syx'
     Options = [ofOverwritePrompt, ofHideReadOnly, ofEnableSizing]
     Title = 'Save MIDI File'
     Left = 384
