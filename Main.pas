@@ -4012,10 +4012,11 @@ begin
       Inc(J);
     end;
     if (I = 0) and SongData_GetStr('MUS_TuneName', SName) then
-    begin // Insert tune name
-      NewEvent(I, 0, $FF, $03);
-      TrackData[I].Data[0].DataString := SName;
-    end;
+      if SName <> '' then
+      begin // Insert tune name
+        NewEvent(I, 0, $FF, $03);
+        TrackData[I].Data[0].DataString := SName;
+      end;
     Log.Lines.Add('[+] Track #'+IntToStr(I)+': '+IntToStr(Length(TrackData[I].Data))+' events converted.');
   end;
   SongData_GetWord('Division', Division);
@@ -4505,6 +4506,8 @@ begin
 end;
 
 procedure TMainForm.Convert_MID_MUS;
+const
+  TPB = 240;
 var
   InitTempo: Cardinal;
   I, J: Integer;
@@ -4554,7 +4557,7 @@ begin
                 end;
                 81: // Set Tempo -> Set Speed
                 begin
-                  Speed := InitTempo / TrackData[I].Data[J].Value;
+                  Speed := InitTempo / TrackData[I].Data[J].Value / (InitTempo / (60000000 / TPB));
                   TrackData[I].Data[J].Status := $F0;
                   SetLength(TrackData[I].Data[J].DataArray, 5);
                   TrackData[I].Data[J].Len := Length(TrackData[I].Data[J].DataArray);
@@ -4583,7 +4586,7 @@ begin
   SongData_PutInt('MUS_Version', 1);
   SongData_PutInt('MUS_ID', 0);
   SongData_PutStr('MUS_TuneName', TuneName);
-  SongData_PutInt('MUS_TicksPerBeat', 60000000 div InitTempo);
+  SongData_PutInt('MUS_TicksPerBeat', TPB);
   SongData_PutInt('MUS_Percussive', 1);
   SongData_PutInt('MUS_PitchBendRange', 1);
   SongData_GetWord('Division', Division);
