@@ -1539,11 +1539,12 @@ end;
 
 function TMainForm.ReadMUS(var F: TMemoryStream; FileName: String): Boolean;
 var
-  MIDILength: DWORD;
+  MIDILength,
+  totalTick, nrCommand,
+  totalTickAct, nrCommandAct: DWORD;
   DW, InitTempo: Cardinal;
   Division, W: Word;
   tuneName: Array[0..29] of AnsiChar;
-  totalTick, nrCommand{, nrCnt}: Integer;
   Title, Bank: String;
   BankLoad: Boolean;
   I: Integer;
@@ -1574,8 +1575,14 @@ begin
   F.Seek($24, soFromBeginning);
   F.ReadBuffer(B, 1);
   SongData_PutInt('MUS_TicksPerBeat', B);
+  if B = 0 then
+    B := 240;
   InitTempo := 60000000 div B;
   SongData_PutDWord('InitTempo', InitTempo);
+
+  F.Seek($25, soFromBeginning);
+  F.ReadBuffer(B, 1);
+  SongData_PutInt('MUS_BeatPerMeasure', B);
 
   F.Seek($26, soFromBeginning);
   F.ReadBuffer(totalTick, 4);
@@ -1605,15 +1612,6 @@ begin
   end else
     if F.Size < 70 + MIDILength then
       Log.Lines.Add('[*] Warning: File seems to be truncated.');
-  {F.Seek($46, soFromBeginning);
-  nrCnt := 0;
-  while F.Position < F.Size do begin
-    F.ReadBuffer(B, 1);
-    if B > $7F then
-      Inc(nrCnt);
-  end;
-  if nrCnt <> nrCommand then
-    Log.Lines.Add('[*] Warning: Defined number of commands in the header doesn''t correspond actual number of commands.');}
   F.Seek($46, soFromBeginning);
 
   SetLength(TrackData, 1);
@@ -1622,6 +1620,23 @@ begin
   ReadTrackData_MUS(F, TrackData[0]);
   Log.Lines.Add('[+] '+IntToStr(Length(TrackData[0].Data))+' events found.');
   SongData_PutInt('MIDIType', 0);
+
+  totalTickAct := 0;
+  for I := 0 to Length(TrackData[0].Data) - 1 do
+    totalTickAct := totalTickAct + TrackData[0].Data[I].Ticks;
+  if totalTickAct <> totalTick then
+    Log.Lines.Add('[*] Warning: Defined number of ticks in the header doesn''t correspond actual number of ticks.');
+
+  nrCommandAct := 0;
+  for I := 0 to Length(TrackData[0].Data) - 1 do
+  begin
+    if TrackData[0].Data[I].Ticks >= 240 then
+      nrCommandAct := nrCommandAct + TrackData[0].Data[I].Ticks div 240;
+    Inc(nrCommandAct);
+  end;
+  if nrCommandAct <> nrCommand then
+    Log.Lines.Add('[*] Warning: Defined number of commands in the header doesn''t correspond actual number of commands.');
+
   Log.Lines.Add('[*] Looking for instrument bank file...');
   Bank := ChangeFileExt(FileName, '.snd');
   BankLoad := MUS_LoadBank(Bank);
@@ -3832,6 +3847,11 @@ begin
       end;
       Inc(J);
     end;
+    if (I = 0) and SongData_GetStr('MUS_TuneName', SName) then
+    begin // Insert tune name
+      NewEvent(I, 0, $FF, $03);
+      TrackData[I].Data[0].DataString := SName;
+    end;
     Log.Lines.Add('[+] Track #'+IntToStr(I)+': '+IntToStr(Length(TrackData[I].Data))+' events converted.');
   end;
   SongData_GetWord('Division', Division);
@@ -4326,6 +4346,7 @@ var
   I, J: Integer;
   Speed: Double;
   Division: Word;
+  TuneName: String;
 begin
   Log.Lines.Add('[*] Converting Standard MIDI to AdLib MUS...');
   Application.ProcessMessages;
@@ -4334,6 +4355,7 @@ begin
     Log.Lines.Add('[-] Initial Tempo is not defined.');
     Exit;
   end;
+  TuneName := '';
   for I := 0 to Length(TrackData) - 1 do begin
     J := 0;
     while J < Length(TrackData[I].Data) do begin
@@ -4358,20 +4380,34 @@ begin
           case TrackData[I].Data[J].Status and $F of
             15: // Meta Event
             begin
-              if TrackData[I].Data[J].BParm1 = 81 then
-              begin // Set Tempo -> Set Speed
-                Speed := InitTempo / TrackData[I].Data[J].Value;
-                TrackData[I].Data[J].Status := $F0;
-                SetLength(TrackData[I].Data[J].DataArray, 5);
-                TrackData[I].Data[J].Len := Length(TrackData[I].Data[J].DataArray);
-                TrackData[I].Data[J].DataArray[0] := $7F;
-                TrackData[I].Data[J].DataArray[1] := $00;
-                TrackData[I].Data[J].DataArray[2] := Floor(Speed);
-                TrackData[I].Data[J].DataArray[3] := Round(Frac(Speed)*128);
-                TrackData[I].Data[J].DataArray[4] := $F7;
+              case TrackData[I].Data[J].BParm1 of
+                3: // Track Name -> Tune Name
+                begin
+                  if TuneName = '' then
+                    TuneName := TrackData[I].Data[J].DataString;
+                  DelEvent(I, J, True);
+                  Continue;
+                end;
+                81: // Set Tempo -> Set Speed
+                begin
+                  Speed := InitTempo / TrackData[I].Data[J].Value;
+                  TrackData[I].Data[J].Status := $F0;
+                  SetLength(TrackData[I].Data[J].DataArray, 5);
+                  TrackData[I].Data[J].Len := Length(TrackData[I].Data[J].DataArray);
+                  TrackData[I].Data[J].DataArray[0] := $7F;
+                  TrackData[I].Data[J].DataArray[1] := $00;
+                  TrackData[I].Data[J].DataArray[2] := Floor(Speed);
+                  TrackData[I].Data[J].DataArray[3] := Round(Frac(Speed)*128);
+                  TrackData[I].Data[J].DataArray[4] := $F7;
+                end;
+                $2F: // End Of Track -> Song End
+                  TrackData[I].Data[J].Status := $FC;
+                else begin
+                  // Not compatible with MUS
+                  DelEvent(I, J, True);
+                  Continue;
+                end;
               end;
-              if TrackData[I].Data[J].BParm1 = $2F then
-                TrackData[I].Data[J].Status := $FC; // End Of Track -> Song End
             end;
           end;
         end;
@@ -4382,8 +4418,8 @@ begin
   end;
   SongData_PutInt('MUS_Version', 1);
   SongData_PutInt('MUS_ID', 0);
-  SongData_PutStr('MUS_TuneName', '');
-  SongData_PutInt('MUS_TicksPerBeat', 0);
+  SongData_PutStr('MUS_TuneName', TuneName);
+  SongData_PutInt('MUS_TicksPerBeat', 60000000 div InitTempo);
   SongData_PutInt('MUS_Percussive', 1);
   SongData_PutInt('MUS_PitchBendRange', 1);
   SongData_GetWord('Division', Division);
