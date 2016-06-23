@@ -487,6 +487,7 @@ type
     procedure Convert_MUS_MDI;
     procedure Convert_MDI_MID;
     procedure Convert_MID_MUS;
+    procedure Convert_MDI_MUS;
     procedure ConvertTicks(RelToAbs: Boolean; var Data: Array of Command);
     procedure CalculateEvnts;
     procedure RefTrackList;
@@ -4581,6 +4582,9 @@ begin
       end;
       Inc(J);
     end;
+    if (Length(TrackData[I].Data) > 0)
+    and (TrackData[I].Data[High(TrackData[I].Data)].Status <> $FC) then
+      NewEvent(I, Length(TrackData[I].Data), $FC, 0);
     Log.Lines.Add('[+] Track #'+IntToStr(I)+': '+IntToStr(Length(TrackData[I].Data))+' events converted.');
   end;
   SongData_PutInt('MUS_Version', 1);
@@ -4591,6 +4595,193 @@ begin
   SongData_PutInt('MUS_PitchBendRange', 1);
   SongData_GetWord('Division', Division);
   SongData_PutInt('MUS_BasicTempo', Division);
+  SongData_PutDWord('InitTempo', 60000000 div TPB);
+  Log.Lines.Add('[+] Done.');
+end;
+
+procedure TMainForm.Convert_MDI_MUS;
+const
+  TPB = 240;
+type
+  TInst = record
+    Name: String;
+    Data: Array[0..13+13+2-1] of Byte;
+  end;
+  PInst = ^TInst;
+var
+  InitTempo: Cardinal;
+  I, J, K, Idx: Integer;
+  Speed: Double;
+  Division: Word;
+  Perc, PBend, TuneName, Instr: String;
+  Insts: TList;
+  P: PInst;
+begin
+  Log.Lines.Add('[*] Converting AdLib MIDI to AdLib MUS...');
+  Application.ProcessMessages;
+  if not SongData_GetDWord('InitTempo', InitTempo) then
+  begin
+    Log.Lines.Add('[-] Initial Tempo is not defined.');
+    Exit;
+  end;
+  Perc := '';
+  PBend := '';
+  TuneName := '';
+  Instr := '';
+  Insts := TList.Create;
+  for I := 0 to Length(TrackData) - 1 do begin
+    J := 0;
+    while J < Length(TrackData[I].Data) do begin
+      case TrackData[I].Data[J].Status shr 4 of
+        10: // Poly Aftertouch
+        begin
+          // Not compatible with MUS A# xx event
+          DelEvent(I, J, True);
+          Continue;
+        end;
+        13: // Volume Change D# -> Volume Change A#
+          TrackData[I].Data[J].Status := $A0 or TrackData[I].Data[J].Status and $F;
+        15: // System Event
+        begin
+          case TrackData[I].Data[J].Status and $F of
+            15: // Meta Event
+            begin
+              case TrackData[I].Data[J].BParm1 of
+                3: // Track Name -> Tune Name
+                begin
+                  if TuneName = '' then
+                    TuneName := TrackData[I].Data[J].DataString;
+                  DelEvent(I, J, True);
+                  Continue;
+                end;
+                4: // Instrument Name
+                begin
+                  Instr := TrackData[I].Data[J].DataString;
+                  DelEvent(I, J, True);
+                  Continue;
+                end;
+                81: // Set Tempo -> Set Speed
+                begin
+                  Speed := InitTempo / TrackData[I].Data[J].Value / (InitTempo / (60000000 / TPB));
+                  TrackData[I].Data[J].Status := $F0;
+                  SetLength(TrackData[I].Data[J].DataArray, 5);
+                  TrackData[I].Data[J].Len := Length(TrackData[I].Data[J].DataArray);
+                  TrackData[I].Data[J].DataArray[0] := $7F;
+                  TrackData[I].Data[J].DataArray[1] := $00;
+                  TrackData[I].Data[J].DataArray[2] := Floor(Speed);
+                  TrackData[I].Data[J].DataArray[3] := Round(Frac(Speed)*128);
+                  TrackData[I].Data[J].DataArray[4] := $F7;
+                end;
+                $2F: // End Of Track -> Song End
+                  TrackData[I].Data[J].Status := $FC;
+                $7F: // Sequencer Specific
+                begin
+                  if (Length(TrackData[I].Data[J].DataArray) >= 6)
+                  and (TrackData[I].Data[J].DataArray[0] = $00)
+                  and (TrackData[I].Data[J].DataArray[1] = $00)
+                  and (TrackData[I].Data[J].DataArray[2] = $3F) then
+                    case TrackData[I].Data[J].DataArray[4] of
+                      1: // Load patch
+                      begin
+                        if Length(TrackData[I].Data[J].DataArray) < 34 then
+                        begin
+                          Instr := '';
+                          DelEvent(I, J, True);
+                          Continue;
+                        end;
+                        Idx := -1;
+                        for K := 0 to Insts.Count - 1 do
+                        begin
+                          P := Insts[K];
+                          if CompareMem(@TrackData[I].Data[J].DataArray[6],
+                          @P^.Data[0], 13+13+2) then
+                            Idx := K;
+                        end;
+                        TrackData[I].Data[J].Status :=
+                        $C0 or (TrackData[I].Data[J].DataArray[5] and $F);
+                        if Idx > -1 then
+                          TrackData[I].Data[J].BParm1 := Idx mod 128
+                        else begin
+                          New(P);
+                          if Instr = '' then
+                            Instr := Format('inst%.4d', [Insts.Count]);
+                          P^.Name := Instr;
+                          CopyMemory(@P^.Data[0],
+                          @TrackData[I].Data[J].DataArray[6], 13+13+2);
+                          TrackData[I].Data[J].BParm1 := Insts.Count mod 128;
+                          Insts.Add(P);
+                        end;
+                        TrackData[I].Data[J].BParm2 := 0;
+                        TrackData[I].Data[J].Len := 0;
+                        SetLength(TrackData[I].Data[J].DataArray, 0);
+                        Instr := '';
+                        Inc(J);
+                        Continue;
+                      end;
+                      2: // Card mode
+                        if Perc = '' then
+                          if TrackData[I].Data[J].DataArray[5] = 0 then
+                            Perc := '-'
+                          else
+                            Perc := '+';
+                      3: // Pitch bend range
+                        if PBend = '' then
+                          PBend := IntToStr(TrackData[I].Data[J].DataArray[5]);
+                    end;
+                  DelEvent(I, J, True);
+                  Continue;
+                end;
+                else begin
+                  // Not compatible with MUS
+                  DelEvent(I, J, True);
+                  Continue;
+                end;
+              end;
+            end;
+          end;
+        end;
+      end;
+      Instr := '';
+      Inc(J);
+    end;
+    if (Length(TrackData[I].Data) > 0)
+    and (TrackData[I].Data[High(TrackData[I].Data)].Status <> $FC) then
+      NewEvent(I, Length(TrackData[I].Data), $FC, 0);
+    Log.Lines.Add('[+] Track #'+IntToStr(I)+': '+IntToStr(Length(TrackData[I].Data))+' events converted.');
+  end;
+  SongData_PutInt('MUS_Version', 1);
+  SongData_PutInt('MUS_ID', 0);
+  SongData_PutStr('MUS_TuneName', TuneName);
+  SongData_PutInt('MUS_TicksPerBeat', TPB);
+  if (Perc = '+') or (Perc = '') then
+    SongData_PutInt('MUS_Percussive', 1)
+  else
+    SongData_PutInt('MUS_Percussive', 0);
+  if PBend = '' then
+    SongData_PutInt('MUS_PitchBendRange', 1)
+  else
+    SongData_PutStr('MUS_PitchBendRange', PBend);
+  SongData_GetWord('Division', Division);
+  SongData_PutInt('MUS_BasicTempo', Division);
+  SongData_PutDWord('InitTempo', 60000000 div TPB);
+
+  if Insts.Count > 0 then
+  begin
+    SongData_PutInt('SND_Version', 1);
+    for I := 0 to Insts.Count - 1 do
+    begin
+      P := Insts[I];
+      SongData_PutStr('SND_Name#'+IntToStr(I), P^.Name);
+      Instr := '';
+      for J := 0 to (13+13+2) - 1 do
+        Instr := Instr + IntToStr(P^.Data[J]) + ' ';
+      SongData_PutStr('SND_Data#'+IntToStr(I), Instr);
+      Dispose(P);
+    end;
+    Insts.Clear;
+  end;
+  Insts.Free;
+
   Log.Lines.Add('[+] Done.');
 end;
 
@@ -7663,6 +7854,11 @@ begin
       Convert_MDI_MID;
       EventProfile := 'mid';
       EventViewProfile := 'mid';
+    end;
+    if DestProfile = 'mus' then begin
+      Convert_MDI_MUS;
+      EventProfile := 'mus';
+      EventViewProfile := 'mus';
     end;
   end;
   if EventProfile = 'xmi' then begin
