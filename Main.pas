@@ -489,6 +489,7 @@ type
     procedure Convert_MDI_MID;
     procedure Convert_MID_MUS;
     procedure Convert_MDI_MUS;
+    procedure Convert_CMF_MID;
     procedure ConvertTicks(RelToAbs: Boolean; var Data: Array of Command);
     procedure CalculateEvnts;
     procedure RefTrackList;
@@ -4922,6 +4923,217 @@ begin
   Log.Lines.Add('[+] Done.');
 end;
 
+procedure TMainForm.Convert_CMF_MID;
+var
+  I, J: Integer;
+  Val: Byte;
+  Rhythm: Boolean;
+begin
+  Log.Lines.Add('[*] Converting Creative Music File to Standard MIDI...');
+  Application.ProcessMessages;
+  for I := 0 to Length(TrackData) - 1 do begin
+    J := 0;
+    while J < Length(TrackData[I].Data) do begin
+      case TrackData[I].Data[J].Status shr 4 of
+        8: // Note Off
+        begin
+          if Rhythm then begin
+            // convert drums
+            case TrackData[I].Data[J].Status and 15 of
+              11: // ch11 - Bass Drum
+              begin
+                TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 9;
+                if TrackData[I].Data[J].BParm1 <= 36 then
+                  Val := 35
+                else
+                  Val := 36;
+                TrackData[I].Data[J].BParm1 := Val;
+              end;
+              12: // ch12 - Snare Drum
+              begin
+                TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 9;
+                if TrackData[I].Data[J].BParm1 <= 40 then
+                  Val := 38
+                else
+                  Val := 40;
+                TrackData[I].Data[J].BParm1 := Val;
+              end;
+              13: // ch13 - Tom
+              begin
+                TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 9;
+                Val := 45;
+                if TrackData[I].Data[J].BParm1 < 39 then
+                  Val := 41;
+                if TrackData[I].Data[J].BParm1 = 39 then
+                  Val := 43;
+                if TrackData[I].Data[J].BParm1 = 40 then
+                  Val := 45;
+                if TrackData[I].Data[J].BParm1 = 41 then
+                  Val := 47;
+                if TrackData[I].Data[J].BParm1 = 42 then
+                  Val := 48;
+                if TrackData[I].Data[J].BParm1 > 42 then
+                  Val := 50;
+                TrackData[I].Data[J].BParm1 := Val;
+              end;
+              14: // ch14 - Cymbal
+              begin
+                TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 9;
+                Val := 57;
+                if TrackData[I].Data[J].BParm1 <= 50 then
+                  Val := 49;
+                if (TrackData[I].Data[J].BParm1 > 50) and
+                (TrackData[I].Data[J].BParm1 <= 65) then
+                  Val := 57;
+                if TrackData[I].Data[J].BParm1 > 65 then
+                  Val := 55;
+                TrackData[I].Data[J].BParm1 := Val;
+              end;
+              15: // ch15 - Hi-Hat
+              begin
+                TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 9;
+                if TrackData[I].Data[J].BParm1 <= 44 then
+                  Val := 42
+                else
+                  Val := 44;
+                TrackData[I].Data[J].BParm1 := Val;
+              end;
+            end;
+          end;
+        end;
+        9: // Note On
+        begin
+          if Rhythm then begin
+            // convert drums
+            case TrackData[I].Data[J].Status and 15 of
+              11:
+              begin
+                TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 9;
+                if TrackData[I].Data[J].BParm1 <= 36 then
+                  Val := 35
+                else
+                  Val := 36;
+                TrackData[I].Data[J].BParm1 := Val;
+              end;
+              12:
+              begin
+                TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 9;
+                if TrackData[I].Data[J].BParm1 <= 40 then
+                  Val := 38
+                else
+                  Val := 40;
+                TrackData[I].Data[J].BParm1 := Val;
+              end;
+              13:
+              begin
+                TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 9;
+                Val := 45;
+                if TrackData[I].Data[J].BParm1 < 39 then
+                  Val := 41;
+                if TrackData[I].Data[J].BParm1 = 39 then
+                  Val := 43;
+                if TrackData[I].Data[J].BParm1 = 40 then
+                  Val := 45;
+                if TrackData[I].Data[J].BParm1 = 41 then
+                  Val := 47;
+                if TrackData[I].Data[J].BParm1 = 42 then
+                  Val := 48;
+                if TrackData[I].Data[J].BParm1 > 42 then
+                  Val := 50;
+                TrackData[I].Data[J].BParm1 := Val;
+              end;
+              14:
+              begin
+                TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 9;
+                Val := 57;
+                if TrackData[I].Data[J].BParm1 <= 50 then
+                  Val := 49;
+                if (TrackData[I].Data[J].BParm1 > 50) and
+                (TrackData[I].Data[J].BParm1 <= 65) then
+                  Val := 57;
+                if TrackData[I].Data[J].BParm1 > 65 then
+                  Val := 55;
+                TrackData[I].Data[J].BParm1 := Val;
+              end;
+              15:
+              begin
+                TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 9;
+                if TrackData[I].Data[J].BParm1 <= 44 then
+                  Val := 42
+                else
+                  Val := 44;
+                TrackData[I].Data[J].BParm1 := Val;
+              end;
+            end;
+          end;
+        end;
+        11: // Control Change
+        begin
+          case TrackData[I].Data[J].BParm1 of
+            $63: // AM+VIB: Unsupported by MIDI
+            begin
+              DelEvent(I, J, True);
+              Continue;
+            end;
+            $66: // Set Marker Byte
+            begin
+              TrackData[I].Data[J].Status := $FF;
+              TrackData[I].Data[J].BParm1 := $06;
+              TrackData[I].Data[J].DataString := IntToStr(TrackData[I].Data[J].BParm2);
+              TrackData[I].Data[J].BParm2 := 0;
+            end;
+            $67: // Rhythm Mode
+            begin
+              Rhythm := TrackData[I].Data[J].BParm2 > 0;
+              DelEvent(I, J, True);
+              Continue;
+            end;
+            $68: // Transpose Up
+            begin
+              DelEvent(I, J, True);
+              Continue;
+              // TODO
+              TrackData[I].Data[J].Status :=
+              $E0 or (TrackData[I].Data[J].Status and $F);
+              TrackData[I].Data[J].Value := 8192 +
+              (TrackData[I].Data[J].BParm2 * 32);
+            end;
+            $69: // Transpose Down
+            begin
+              DelEvent(I, J, True);
+              Continue;
+              // TODO
+              TrackData[I].Data[J].Status :=
+              $E0 or (TrackData[I].Data[J].Status and $F);
+              TrackData[I].Data[J].Value := 8192 -
+              (TrackData[I].Data[J].BParm2 * 32);
+            end;
+          end;
+        end;
+        12: // Program Change
+          if Rhythm and (TrackData[I].Data[J].Status and $F >= 11) then
+          begin
+            DelEvent(I, J, True);
+            Continue;
+          end;
+        15: // System
+        begin
+          if (TrackData[I].Data[J].Status = $FF)
+          and (TrackData[I].Data[J].BParm1 = 81) then
+            // convert tempo
+            TrackData[I].Data[J].Value := TrackData[I].Data[J].Value * 2;
+        end;
+      end;
+      Inc(J);
+    end;
+    NewEvent(I, 0, $FF, $51);
+    TrackData[I].Data[0].Value := 1000000;
+    Log.Lines.Add('[+] Track #'+IntToStr(I)+': '+IntToStr(Length(TrackData[I].Data))+' events converted.');
+  end;
+  SongData_PutDWord('InitTempo', 500000);
+  Log.Lines.Add('[+] Done.');
+end;
+
 procedure TMainForm.RefTrackList;
 var
   I: Integer;
@@ -8012,7 +8224,11 @@ begin
     end;
   end;
   if EventProfile = 'cmf' then begin
-
+    if DestProfile = 'mid' then begin
+      Convert_CMF_MID;
+      EventProfile := 'mid';
+      EventViewProfile := 'mid';
+    end;
   end;
   if EventProfile = 'mus' then begin
     if DestProfile = 'mid' then begin
