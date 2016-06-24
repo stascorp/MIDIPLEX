@@ -574,6 +574,17 @@ begin
   SongData.InsertRow(Name, Val, True);
 end;
 
+function SongData_GetByte(Name: String; var B: Byte): Boolean;
+var
+  Row, Code: Integer;
+begin
+  Result := False;
+  if not SongData.FindRow(Name, Row) then
+    Exit;
+  Val(SongData.Cells[1, Row], B, Code);
+  Result := Code = 0;
+end;
+
 function SongData_GetSInt(Name: String; var I: ShortInt): Boolean;
 var
   Row, Code: Integer;
@@ -3957,9 +3968,11 @@ begin
     Rhythm := I > 0
   else
     Rhythm := False;
-  for I := 0 to Length(TrackData) - 1 do begin
+  for I := 0 to Length(TrackData) - 1 do
+  begin
     J := 0;
-    while J < Length(TrackData[I].Data) do begin
+    while J < Length(TrackData[I].Data) do
+    begin
       // Filter events on unused channels
       if TrackData[I].Data[J].Status shr 4 < 15 then // Not System event
         if (     Rhythm  and (TrackData[I].Data[J].Status and $F > 10))
@@ -3972,11 +3985,12 @@ begin
       case TrackData[I].Data[J].Status shr 4 of
         8: // Note Off
         begin
-          if Rhythm then begin
+          if Rhythm then
+          begin
             // convert drums
             case TrackData[I].Data[J].Status and 15 of
-              // ch06 - Bass Drum
-              6: begin
+              6: // ch06 - Bass Drum
+              begin
                 TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 9;
                 if TrackData[I].Data[J].BParm1 <= 36 then
                   B := 35
@@ -3984,8 +3998,8 @@ begin
                   B := 36;
                 TrackData[I].Data[J].BParm1 := B;
               end;
-              // ch07 - Snare Drum
-              7: begin
+              7: // ch07 - Snare Drum
+              begin
                 TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 9;
                 if TrackData[I].Data[J].BParm1 <= 40 then
                   B := 38
@@ -3993,8 +4007,8 @@ begin
                   B := 40;
                 TrackData[I].Data[J].BParm1 := B;
               end;
-              // ch08 - Tom
-              8: begin
+              8: // ch08 - Tom
+              begin
                 TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 9;
                 B := 45;
                 if TrackData[I].Data[J].BParm1 < 39 then
@@ -4011,8 +4025,8 @@ begin
                   B := 50;
                 TrackData[I].Data[J].BParm1 := B;
               end;
-              // ch09 - Cymbal
-              9: begin
+              9: // ch09 - Cymbal
+              begin
                 B := 57;
                 if TrackData[I].Data[J].BParm1 <= 50 then
                   B := 49;
@@ -4023,8 +4037,8 @@ begin
                   B := 55;
                 TrackData[I].Data[J].BParm1 := B;
               end;
-              // ch10 - Hi-Hat
-              10: begin
+              10: // ch10 - Hi-Hat
+              begin
                 TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 9;
                 if TrackData[I].Data[J].BParm1 <= 44 then
                   B := 42
@@ -4037,10 +4051,12 @@ begin
         end;
         9: // Note On
         begin
-          if Rhythm then begin
+          if Rhythm then
+          begin
             // convert drums
             case TrackData[I].Data[J].Status and 15 of
-              6: begin
+              6:
+              begin
                 TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 9;
                 if TrackData[I].Data[J].BParm1 <= 36 then
                   B := 35
@@ -4048,7 +4064,8 @@ begin
                   B := 36;
                 TrackData[I].Data[J].BParm1 := B;
               end;
-              7: begin
+              7:
+              begin
                 TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 9;
                 if TrackData[I].Data[J].BParm1 <= 40 then
                   B := 38
@@ -4056,7 +4073,8 @@ begin
                   B := 40;
                 TrackData[I].Data[J].BParm1 := B;
               end;
-              8: begin
+              8:
+              begin
                 TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 9;
                 if TrackData[I].Data[J].BParm1 < 39 then
                   B := 41;
@@ -4072,7 +4090,8 @@ begin
                   B := 50;
                 TrackData[I].Data[J].BParm1 := B;
               end;
-              9: begin
+              9:
+              begin
                 if TrackData[I].Data[J].BParm1 <= 50 then
                   B := 49;
                 if (TrackData[I].Data[J].BParm1 > 50) and
@@ -4082,7 +4101,8 @@ begin
                   B := 55;
                 TrackData[I].Data[J].BParm1 := B;
               end;
-              10: begin
+              10:
+              begin
                 TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 9;
                 if TrackData[I].Data[J].BParm1 <= 44 then
                   B := 42
@@ -4149,6 +4169,47 @@ begin
         end;
       end;
       Inc(J);
+    end;
+    SongData_GetByte('MUS_PitchBendRange', B);
+    if B > 1 then
+    begin
+      for J := 0 to 5 do
+      begin
+        NewEvent(I, J*5 + 0, $B0, $64);
+        TrackData[I].Data[J*5 + 0].Status := $B0 or J;
+        TrackData[I].Data[J*5 + 0].BParm2 := 0;
+        NewEvent(I, J*5 + 1, $B0, $65);
+        TrackData[I].Data[J*5 + 1].Status := $B0 or J;
+        TrackData[I].Data[J*5 + 1].BParm2 := 0;
+        NewEvent(I, J*5 + 2, $B0, 6);
+        TrackData[I].Data[J*5 + 2].Status := $B0 or J;
+        TrackData[I].Data[J*5 + 2].BParm2 := B;
+        NewEvent(I, J*5 + 3, $B0, $64);
+        TrackData[I].Data[J*5 + 3].Status := $B0 or J;
+        TrackData[I].Data[J*5 + 3].BParm2 := $7F;
+        NewEvent(I, J*5 + 4, $B0, $65);
+        TrackData[I].Data[J*5 + 4].Status := $B0 or J;
+        TrackData[I].Data[J*5 + 4].BParm2 := $7F;
+      end;
+      if not Rhythm then
+        for J := 6 to 8 do
+        begin
+          NewEvent(I, J*5 + 0, $B0, $64);
+          TrackData[I].Data[J*5 + 0].Status := $B0 or J;
+          TrackData[I].Data[J*5 + 0].BParm2 := 0;
+          NewEvent(I, J*5 + 1, $B0, $65);
+          TrackData[I].Data[J*5 + 1].Status := $B0 or J;
+          TrackData[I].Data[J*5 + 1].BParm2 := 0;
+          NewEvent(I, J*5 + 2, $B0, 6);
+          TrackData[I].Data[J*5 + 2].Status := $B0 or J;
+          TrackData[I].Data[J*5 + 2].BParm2 := B;
+          NewEvent(I, J*5 + 3, $B0, $64);
+          TrackData[I].Data[J*5 + 3].Status := $B0 or J;
+          TrackData[I].Data[J*5 + 3].BParm2 := $7F;
+          NewEvent(I, J*5 + 4, $B0, $65);
+          TrackData[I].Data[J*5 + 4].Status := $B0 or J;
+          TrackData[I].Data[J*5 + 4].BParm2 := $7F;
+        end;
     end;
     if (I = 0) and SongData_GetStr('MUS_TuneName', SName) then
       if SName <> '' then
@@ -4313,12 +4374,18 @@ begin
 end;
 
 procedure TMainForm.Convert_MDI_MID;
+type
+  TInst = Array[0..13+13+2-1] of Byte;
+  PInst = ^TInst;
 var
   Notes: Array[0..15] of Array of Byte;
   NotesReset: Array[0..15] of Boolean;
-  I,J,K: Integer;
+  Insts: TList;
+  P: PInst;
+  I,J,K,Idx: Integer;
   Val: Byte;
   Rhythm: Boolean;
+
   procedure ClearNotes;
   var
     I: Integer;
@@ -4358,50 +4425,20 @@ var
       Notes[Chn][I-1] := Notes[Chn][I];
     SetLength(Notes[Chn], Length(Notes[Chn]) - 1);
   end;
-  function GetGMInstrument(Bytes: Array of Byte): Byte;
-  type
-    TMDIPatch = Array[0..27] of Byte;
-  const
-    Patches: Array[0..6] of TMDIPatch =
-    (($01,$07,$05,$07,$04,$00,$08,$02,$0D,$01,$00,$00,$01,$00, // bell-like short sound
-      $04,$7A,$08,$05,$00,$05,$04,$00,$01,$00,$01,$01,$00,$00),// 103 sci-fi
-     ($00,$01,$00,$0C,$0F,$01,$08,$0F,$0B,$00,$00,$01,$01,$00, // pizzicato-like percussion
-      $01,$7A,$0F,$05,$00,$05,$07,$00,$00,$00,$01,$01,$02,$00),// 115 woodblock
-     ($00,$01,$00,$0C,$09,$01,$08,$0F,$02,$01,$00,$00,$01,$00, // short percussive bass
-      $02,$7A,$08,$0F,$00,$05,$0F,$00,$00,$00,$01,$01,$00,$00),// 34 picked bass
-     ($00,$00,$03,$0F,$00,$01,$00,$03,$00,$01,$00,$00,$01,$00, // harpsichord
-      $00,$7A,$0B,$0F,$00,$05,$0F,$00,$01,$01,$00,$01,$01,$01),// 6
-     ($00,$00,$04,$0F,$0F,$01,$08,$0F,$04,$00,$00,$01,$01,$00, // bass drum
-      $01,$7A,$0F,$07,$00,$05,$0F,$00,$00,$00,$01,$01,$00,$00),// 116
-     ($00,$0C,$48,$0C,$0A,$00,$08,$06,$00,$00,$00,$00,$00,$67, // glock, transposed
-      $0D,$7A,$48,$2D,$48,$0F,$00,$FF,$0F,$00,$07,$00,$00,$79),// 12
-     ($00,$01,$3E,$0F,$02,$00,$07,$07,$03,$00,$00,$00,$00,$67, // techno bass short
-      $03,$7A,$3E,$2D,$3E,$0F,$00,$01,$0F,$00,$10,$00,$00,$79) // 38
-    );
-    Presets: Array[0..6] of Byte =
-    (103, 115, 34, 6, 116, 12, 38);
-  var
-    Patch: TMDIPatch;
-    I: Integer;
-  begin
-    Result := 0;
-    if Length(Bytes) <> 34 then
-      Exit;
-    Move(Bytes[6], Patch[0], 28);
-    for I := 0 to Length(Patches) - 1 do
-      if CompareMem(@Patch[0], @Patches[I][0], 28) then
-        Result := Presets[I];
-  end;
 begin
   Rhythm := False;
   Log.Lines.Add('[*] Converting AdLib MDI to Standard MIDI...');
   Application.ProcessMessages;
-  for I:=0 to Length(TrackData)-1 do begin
+  Insts := TList.Create;
+  for I := 0 to Length(TrackData) - 1 do
+  begin
     ClearNotes;
     J := 0;
-    while J < Length(TrackData[I].Data) do begin
+    while J < Length(TrackData[I].Data) do
+    begin
       case TrackData[I].Data[J].Status shr 4 of
-        8: begin
+        8: // Note Off
+        begin
           if TrackData[I].Data[J].BParm1 = 0 then
           begin
             // Global Note Off
@@ -4441,11 +4478,12 @@ begin
           else // Normal Note Off
             SetNoteOff(TrackData[I].Data[J].Status and $F, TrackData[I].Data[J].BParm1);
 
-          if Rhythm then begin
+          if Rhythm then
+          begin
             // convert drums
             case TrackData[I].Data[J].Status and 15 of
-              // ch06 - Bass Drum
-              6: begin
+              6: // ch06 - Bass Drum
+              begin
                 TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 9;
                 if TrackData[I].Data[J].BParm1 <= 36 then
                   Val := 35
@@ -4453,8 +4491,8 @@ begin
                   Val := 36;
                 TrackData[I].Data[J].BParm1 := Val;
               end;
-              // ch07 - Snare Drum
-              7: begin
+              7: // ch07 - Snare Drum
+              begin
                 TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 9;
                 if TrackData[I].Data[J].BParm1 <= 40 then
                   Val := 38
@@ -4462,8 +4500,8 @@ begin
                   Val := 40;
                 TrackData[I].Data[J].BParm1 := Val;
               end;
-              // ch08 - Tom
-              8: begin
+              8: // ch08 - Tom
+              begin
                 TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 9;
                 Val := 45;
                 if TrackData[I].Data[J].BParm1 < 39 then
@@ -4480,8 +4518,8 @@ begin
                   Val := 50;
                 TrackData[I].Data[J].BParm1 := Val;
               end;
-              // ch09 - Cymbal
-              9: begin
+              9: // ch09 - Cymbal
+              begin
                 Val := 57;
                 if TrackData[I].Data[J].BParm1 <= 50 then
                   Val := 49;
@@ -4492,8 +4530,8 @@ begin
                   Val := 55;
                 TrackData[I].Data[J].BParm1 := Val;
               end;
-              // ch10 - Hi-Hat
-              10: begin
+              10: // ch10 - Hi-Hat
+              begin
                 TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 9;
                 if TrackData[I].Data[J].BParm1 <= 44 then
                   Val := 42
@@ -4505,7 +4543,8 @@ begin
           end;
           Inc(J);
         end;
-        9: begin
+        9: // Note On
+        begin
           if TrackData[I].Data[J].BParm2 = 0 then
           begin
             // Treat as Note Off
@@ -4519,10 +4558,12 @@ begin
               Notes[K][High(Notes[K])] := TrackData[I].Data[J].BParm1;
             end;
 
-          if Rhythm then begin
+          if Rhythm then
+          begin
             // convert drums
             case TrackData[I].Data[J].Status and 15 of
-              6: begin
+              6:
+              begin
                 TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 9;
                 if TrackData[I].Data[J].BParm1 <= 36 then
                   Val := 35
@@ -4530,7 +4571,8 @@ begin
                   Val := 36;
                 TrackData[I].Data[J].BParm1 := Val;
               end;
-              7: begin
+              7:
+              begin
                 TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 9;
                 if TrackData[I].Data[J].BParm1 <= 40 then
                   Val := 38
@@ -4538,7 +4580,8 @@ begin
                   Val := 40;
                 TrackData[I].Data[J].BParm1 := Val;
               end;
-              8: begin
+              8:
+              begin
                 TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 9;
                 Val := 45;
                 if TrackData[I].Data[J].BParm1 < 39 then
@@ -4555,7 +4598,8 @@ begin
                   Val := 50;
                 TrackData[I].Data[J].BParm1 := Val;
               end;
-              9: begin
+              9:
+              begin
                 Val := 57;
                 if TrackData[I].Data[J].BParm1 <= 50 then
                   Val := 49;
@@ -4566,7 +4610,8 @@ begin
                   Val := 55;
                 TrackData[I].Data[J].BParm1 := Val;
               end;
-              10: begin
+              10:
+              begin
                 TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 9;
                 if TrackData[I].Data[J].BParm1 <= 44 then
                   Val := 42
@@ -4579,41 +4624,58 @@ begin
           Inc(J);
         end;
         10..12,14: Inc(J);
-        13: begin // Channel Aftertouch -> Volume Change
+        13: // Channel Aftertouch -> Volume Change
+        begin
           TrackData[I].Data[J].Status := $B0 or TrackData[I].Data[J].Status and $F;
           TrackData[I].Data[J].BParm2 := TrackData[I].Data[J].BParm1;
           TrackData[I].Data[J].BParm1 := 7;
+          Inc(J);
         end;
-        15: begin
+        15: // System
+        begin
           if (TrackData[I].Data[J].Status and 15 = 0)
           or ((TrackData[I].Data[J].Status and 15 = 15)
-          and (TrackData[I].Data[J].BParm1 = 127))
+          and (TrackData[I].Data[J].BParm1 = $7F))
           and (Length(TrackData[I].Data[J].DataArray) >= 6)
           and (TrackData[I].Data[J].DataArray[0] = 0)
           and (TrackData[I].Data[J].DataArray[1] = 0)
-          and (TrackData[I].Data[J].DataArray[2] = 63)
+          and (TrackData[I].Data[J].DataArray[2] = $3F)
           and (TrackData[I].Data[J].DataArray[3] = 0)
           then begin
             case TrackData[I].Data[J].DataArray[4] of
-              1: begin
-                case TrackData[I].Data[J].DataArray[5] of
-                  0: TrackData[I].Data[J].BParm1 := 35; // Sitar/Music Box/Bass
-                  1: TrackData[I].Data[J].BParm1 := 108; // Vibraphone/Marimba/Kalimba
-                  2: TrackData[I].Data[J].BParm1 := 80; // Synth/Strings
-                  3: TrackData[I].Data[J].BParm1 := 3; // Honky-Tonk/Guitar
-                  4: TrackData[I].Data[J].BParm1 := 87; // Synth/Poly/Lead
-                  5: TrackData[I].Data[J].BParm1 := 17; // Synth/Tom/Percussive
-                  else
-                    TrackData[I].Data[J].BParm1 := TrackData[I].Data[J].DataArray[5];
-                end;
-                //TrackData[I].Data[J].BParm1 := GetGMInstrument(TrackData[I].Data[J].DataArray);
+              1: // Load Patch
+              begin
                 if TrackData[I].Data[J].DataArray[5] < 16 then begin
                   if Rhythm
                   and (TrackData[I].Data[J].DataArray[5] >= 6)
                   and (TrackData[I].Data[J].DataArray[5] <= 10) then
                     DelEvent(I, J, True)
                   else begin
-                    TrackData[I].Data[J].Status := $C0 or TrackData[I].Data[J].DataArray[5];
+                    if Length(TrackData[I].Data[J].DataArray) < 34 then
+                    begin
+                      DelEvent(I, J, True);
+                      Continue;
+                    end;
+                    Idx := -1;
+                    for K := 0 to Insts.Count - 1 do
+                    begin
+                      P := Insts[K];
+                      if CompareMem(@TrackData[I].Data[J].DataArray[6],
+                      @P^[0], 13+13+2) then
+                        Idx := K;
+                    end;
+                    TrackData[I].Data[J].Status :=
+                    $C0 or (TrackData[I].Data[J].DataArray[5] and $F);
+                    if Idx > -1 then
+                      TrackData[I].Data[J].BParm1 := Idx mod 128
+                    else begin
+                      New(P);
+                      CopyMemory(@P^[0],
+                      @TrackData[I].Data[J].DataArray[6], 13+13+2);
+                      TrackData[I].Data[J].BParm1 := Insts.Count mod 128;
+                      Insts.Add(P);
+                    end;
+                    TrackData[I].Data[J].BParm2 := 0;
                     TrackData[I].Data[J].Len := 0;
                     SetLength(TrackData[I].Data[J].DataArray, 0);
                     Inc(J);
@@ -4621,9 +4683,60 @@ begin
                 end else
                   Inc(J);
               end;
-              2: begin
+              2: // Rhythm Mode
+              begin
                 Rhythm := TrackData[I].Data[J].DataArray[5] > 0;
                 DelEvent(I, J, True);
+              end;
+              3: // Pitch Bend Range
+              begin
+                Idx := TrackData[I].Data[J].DataArray[5];
+                if Idx > 1 then
+                begin
+                  for K := 0 to 5 do
+                  begin
+                    NewEvent(I, J + (K*5) + 1, $B0, $64);
+                    TrackData[I].Data[J + (K*5) + 1].Status := $B0 or K;
+                    TrackData[I].Data[J + (K*5) + 1].BParm2 := 0;
+                    NewEvent(I, J + (K*5) + 2, $B0, $65);
+                    TrackData[I].Data[J + (K*5) + 2].Status := $B0 or K;
+                    TrackData[I].Data[J + (K*5) + 2].BParm2 := 0;
+                    NewEvent(I, J + (K*5) + 3, $B0, 6);
+                    TrackData[I].Data[J + (K*5) + 3].Status := $B0 or K;
+                    TrackData[I].Data[J + (K*5) + 3].BParm2 := Idx;
+                    NewEvent(I, J + (K*5) + 4, $B0, $64);
+                    TrackData[I].Data[J + (K*5) + 4].Status := $B0 or K;
+                    TrackData[I].Data[J + (K*5) + 4].BParm2 := $7F;
+                    NewEvent(I, J + (K*5) + 5, $B0, $65);
+                    TrackData[I].Data[J + (K*5) + 5].Status := $B0 or K;
+                    TrackData[I].Data[J + (K*5) + 5].BParm2 := $7F;
+                  end;
+                  if not Rhythm then
+                    for K := 6 to 8 do
+                    begin
+                      NewEvent(I, J + (K*5) + 1, $B0, $64);
+                      TrackData[I].Data[J + (K*5) + 1].Status := $B0 or K;
+                      TrackData[I].Data[J + (K*5) + 1].BParm2 := 0;
+                      NewEvent(I, J + (K*5) + 2, $B0, $65);
+                      TrackData[I].Data[J + (K*5) + 2].Status := $B0 or K;
+                      TrackData[I].Data[J + (K*5) + 2].BParm2 := 0;
+                      NewEvent(I, J + (K*5) + 3, $B0, 6);
+                      TrackData[I].Data[J + (K*5) + 3].Status := $B0 or K;
+                      TrackData[I].Data[J + (K*5) + 3].BParm2 := Idx;
+                      NewEvent(I, J + (K*5) + 4, $B0, $64);
+                      TrackData[I].Data[J + (K*5) + 4].Status := $B0 or K;
+                      TrackData[I].Data[J + (K*5) + 4].BParm2 := $7F;
+                      NewEvent(I, J + (K*5) + 5, $B0, $65);
+                      TrackData[I].Data[J + (K*5) + 5].Status := $B0 or K;
+                      TrackData[I].Data[J + (K*5) + 5].BParm2 := $7F;
+                    end;
+                end;
+                DelEvent(I, J, True);
+                if Idx > 1 then
+                  if Rhythm then
+                    J := J + 6 * 5
+                  else
+                    J := J + 9 * 5;
               end;
               else
                 Inc(J);
@@ -4634,13 +4747,26 @@ begin
       end;
     end;
     if not((TrackData[I].Data[Length(TrackData[I].Data)-1].Status = $FF)
-    and (TrackData[I].Data[Length(TrackData[I].Data)-1].BParm1 = $2F)) then begin
-      SetLength(TrackData[I].Data, Length(TrackData[I].Data)+1);
-      TrackData[I].Data[Length(TrackData[I].Data)-1].Status := $FF;
-      TrackData[I].Data[Length(TrackData[I].Data)-1].BParm1 := $2F;
+    and (TrackData[I].Data[Length(TrackData[I].Data)-1].BParm1 = $2F)) then
+    begin
+      SetLength(TrackData[I].Data, Length(TrackData[I].Data) + 1);
+      TrackData[I].Data[High(TrackData[I].Data)].Status := $FF;
+      TrackData[I].Data[High(TrackData[I].Data)].BParm1 := $2F;
     end;
     Log.Lines.Add('[+] Track #'+IntToStr(I)+': '+IntToStr(Length(TrackData[I].Data))+' events converted.');
   end;
+
+  if Insts.Count > 0 then
+  begin
+    for I := 0 to Insts.Count - 1 do
+    begin
+      P := Insts[I];
+      Dispose(P);
+    end;
+    Insts.Clear;
+  end;
+  Insts.Free;
+
   Log.Lines.Add('[+] Done.');
 end;
 
