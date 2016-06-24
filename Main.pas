@@ -13,6 +13,16 @@ const
   WM_SETVU = WM_USER + 112;
 
 type
+  FILE_VERSION = record
+    Version: record case Boolean of
+      True: (dw: DWORD);
+      False: (w: record
+        Minor, Major: Word;
+      end;)
+    end;
+    Release, Build: Word;
+    bDebug, bPrerelease, bPrivate, bSpecial: Boolean;
+  end;
   TPlayerInfo = record
     TrackID, TrackPos: Integer;
     Notify: Boolean;
@@ -786,16 +796,65 @@ begin
   F.WriteBuffer(B, 1);
 end;
 
-procedure TMainForm.MAboutClick(Sender: TObject);
+function GetMyVersion(var FileVersion: FILE_VERSION): Boolean;
+type
+  VS_VERSIONINFO = record
+    wLength, wValueLength, wType: Word;
+    szKey: Array[1..16] of WideChar;
+    Padding1: Word;
+    Value: VS_FIXEDFILEINFO;
+    Padding2, Children: Word;
+  end;
+  PVS_VERSIONINFO = ^VS_VERSIONINFO;
+const
+  VFF_DEBUG = 1;
+  VFF_PRERELEASE = 2;
+  VFF_PRIVATE = 8;
+  VFF_SPECIAL = 32;
+var
+  hResourceInfo: HRSRC;
+  VersionInfo: PVS_VERSIONINFO;
 begin
-  MessageBox(Handle,
-  'MIDIPLEX Sequencer / MIDI Event Editor by Stas''M' + #13#10 +
-  'Project development started in Apr 2012!' + #13#10 +
-  #13#10 +
-  'Copyright (C) Stas''M Corp. 2012-2016' + #13#10 +
-  #13#10 +
-  'Software is licensed under GNU GPL v3, see LICENSE file.',
-  'About', MB_ICONINFORMATION or MB_OK);
+  Result := False;
+
+  hResourceInfo := FindResource(hInstance, PWideChar(1), PWideChar($10));
+  if hResourceInfo = 0 then
+    Exit;
+
+  VersionInfo := Pointer(LoadResource(hInstance, hResourceInfo));
+  if VersionInfo = nil then
+    Exit;
+
+  FileVersion.Version.dw := VersionInfo.Value.dwFileVersionMS;
+  FileVersion.Release := Word(VersionInfo.Value.dwFileVersionLS shr 16);
+  FileVersion.Build := Word(VersionInfo.Value.dwFileVersionLS);
+  FileVersion.bDebug := (VersionInfo.Value.dwFileFlags and VFF_DEBUG) = VFF_DEBUG;
+  FileVersion.bPrerelease := (VersionInfo.Value.dwFileFlags and VFF_PRERELEASE) = VFF_PRERELEASE;
+  FileVersion.bPrivate := (VersionInfo.Value.dwFileFlags and VFF_PRIVATE) = VFF_PRIVATE;
+  FileVersion.bSpecial := (VersionInfo.Value.dwFileFlags and VFF_SPECIAL) = VFF_SPECIAL;
+
+  Result := True;
+end;
+
+procedure TMainForm.MAboutClick(Sender: TObject);
+var
+  FV: FILE_VERSION;
+  S: String;
+begin
+  GetMyVersion(FV);
+  S := 'MIDIPLEX Sequencer ';
+  S := S + Format('v%d.%d.%d', [FV.Version.w.Major, FV.Version.w.Minor, FV.Release]);
+  S := S + #13#10#13#10 +
+  'Copyright (C) Stas''M Corp. 2012-2016' + #13#10;
+  S := S + #13#10 +
+  'Project development was started in Apr 2012 by Stas''M.'#13#10 +
+  'The main goal is to provide exclusive editing features that ' +
+  'other sequencers don''t, for example low level MIDI event modification, ' +
+  'support for old and some exotic music formats, and much more!'#13#10 +
+  'However it''s in development for now - this is early alpha version.' +
+  #13#10;
+  S := S + #13#10 + 'Software is licensed under GNU GPL v3, see LICENSE file.';
+  MessageBox(Handle, PWideChar(S), 'About', MB_ICONINFORMATION or MB_OK);
 end;
 
 function TMainForm.DetectMIDI(var F: TMemoryStream): Boolean;
