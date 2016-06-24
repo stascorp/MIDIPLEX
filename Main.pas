@@ -475,6 +475,7 @@ type
     procedure ReadTrackData_SYX(var F: TMemoryStream; var Trk: Chunk);
     procedure WriteMIDI(var F: TMemoryStream);
     procedure WriteRMI(var F: TMemoryStream);
+    procedure WriteCMF(var F: TMemoryStream);
     procedure WriteMUS(var F: TMemoryStream; FileName: String);
     procedure WriteRaw(var F: TMemoryStream);
     procedure WriteSYX(var F: TMemoryStream);
@@ -1360,11 +1361,6 @@ begin
   SongData_PutInt('SMPTE', 0);
   SongData_PutInt('Division', iTicksPerSecond div 2);
 
-  S := '';
-  for I := 0 to 15 do
-    S := S + IntToStr(iChannelInUse[I]) + ' ';
-  SongData_PutStr('CMF_ChannelInUse', S);
-
   if W = $0100 then begin
     iInstrumentCount := 0;
     iTempo := 0;
@@ -1396,7 +1392,6 @@ begin
   end else
     iInstrumentCount := 0;
 
-  SongData_PutInt('CMF_Instruments', iInstrumentCount);
   SongData_PutInt('CMF_Tempo', iTempo);
 
   for I := 0 to Length(Instruments) - 1 do
@@ -3142,15 +3137,13 @@ const
 var
   Ver, Division: Word;
   SMPTE: ShortInt;
-  S: PAnsiChar;
   C: Cardinal;
   I: Integer;
   TrkOffset: Cardinal;
   TrackStream: TMemoryStream;
 begin
   Log.Lines.Add('[*] Writing MIDI header...');
-  S := PAnsiChar(AnsiString(Header));
-  F.WriteBuffer(S^, 4);
+  F.WriteBuffer(PAnsiChar(Header)^, 4);
   C := $06000000;
   F.WriteBuffer(C, 4);
   if not SongData_GetWord('MIDIType', Ver) then
@@ -3181,8 +3174,7 @@ begin
     goto Done;
   for I := 0 to Length(TrackData) - 1 do begin
     Log.Lines.Add('[*] Writing track '+IntToStr(I)+'...');
-    S := PAnsiChar(AnsiString(Track));
-    F.WriteBuffer(S^, 4);
+    F.WriteBuffer(PAnsiChar(Track)^, 4);
     C := 0;
     F.WriteBuffer(C, 4);
     TrkOffset := F.Position;
@@ -3220,19 +3212,15 @@ const
   data = 'data';
 var
   dw: DWORD;
-  S: PAnsiChar;
   MIDI: TMemoryStream;
 begin
   Log.Lines.Add('[*] Writing RIFF header...');
 
-  S := PAnsiChar(AnsiString(RIFF));
-  F.WriteBuffer(S^, 4);
+  F.WriteBuffer(PAnsiChar(RIFF)^, 4);
   dw := 0;
   F.WriteBuffer(dw, 4);
-  S := PAnsiChar(AnsiString(RMID));
-  F.WriteBuffer(S^, 4);
-  S := PAnsiChar(AnsiString(data));
-  F.WriteBuffer(S^, 4);
+  F.WriteBuffer(PAnsiChar(RMID)^, 4);
+  F.WriteBuffer(PAnsiChar(data)^, 4);
 
   Log.Lines.Add('[*] Writing RIFF data...');
 
@@ -3254,6 +3242,155 @@ begin
   dw := F.Size - 8;
   F.WriteBuffer(dw, 4);
   F.Seek(F.Size, soFromBeginning);
+end;
+
+procedure TMainForm.WriteCMF(var F: TMemoryStream);
+const
+  CTMF = 'CTMF';
+var
+  NewVer: Boolean;
+  W: Word;
+  B: Byte;
+  iInstrumentCount: Word;
+  iChannelInUse: Array[0..15] of Byte;
+  MIDIData: TMemoryStream;
+  S: String;
+  I, J: Integer;
+  SL: TStringList;
+begin
+  Log.Lines.Add('[*] Writing Creative Music File...');
+
+  F.WriteBuffer(PAnsiChar(CTMF)^, 4);
+
+  SongData_GetWord('CMF_Version', W);
+  if W <> $0100 then
+    W := $0101;
+  NewVer := W <> $0100;
+  F.WriteBuffer(W, 2);
+
+  W := 0;
+  F.WriteBuffer(W, 2); // iOffsetInstruments
+  F.WriteBuffer(W, 2); // iOffsetMusic
+  if not SongData_GetWord('CMF_TicksPerQuarter', W) then
+  begin
+    Log.Lines.Add('[*] Warning: Ticks Per Quarter is not defined.');
+    W := 0;
+  end;
+  F.WriteBuffer(W, 2);
+  if not SongData_GetWord('CMF_TicksPerSecond', W) then
+  begin
+    Log.Lines.Add('[-] Ticks Per Second is not defined.');
+    Exit;
+  end;
+  F.WriteBuffer(W, 2);
+  W := 0;
+  F.WriteBuffer(W, 2); // iOffsetTitle
+  F.WriteBuffer(W, 2); // iOffsetComposer
+  F.WriteBuffer(W, 2); // iOffsetRemarks
+  FillChar(iChannelInUse, 16, 0);
+  F.WriteBuffer(iChannelInUse, 16);
+
+  iInstrumentCount := 0;
+  while SongData_GetStr('CMF_Inst#'+IntToStr(iInstrumentCount), S) do
+    Inc(iInstrumentCount);
+
+  if not NewVer then
+    F.WriteBuffer(iInstrumentCount, 1)
+  else begin
+    F.WriteBuffer(iInstrumentCount, 2);
+    if not SongData_GetWord('CMF_Tempo', W) then
+    begin
+      Log.Lines.Add('[*] Warning: Tempo is not defined.');
+      W := 0;
+    end;
+    F.WriteBuffer(W, 2);
+  end;
+
+  SongData_GetStr('CMF_Title', S);
+  if Length(S) > 0 then
+  begin
+    W := F.Position;
+    F.Seek($E, soFromBeginning);
+    F.WriteBuffer(W, 2);
+    F.Seek(W, soFromBeginning);
+    F.WriteBuffer(PAnsiChar(S)^, Length(S) + 1);
+  end;
+
+  SongData_GetStr('CMF_Composer', S);
+  if Length(S) > 0 then
+  begin
+    W := F.Position;
+    F.Seek($10, soFromBeginning);
+    F.WriteBuffer(W, 2);
+    F.Seek(W, soFromBeginning);
+    F.WriteBuffer(PAnsiChar(S)^, Length(S) + 1);
+  end;
+
+  SongData_GetStr('CMF_Remarks', S);
+  if Length(S) > 0 then
+  begin
+    W := F.Position;
+    F.Seek($12, soFromBeginning);
+    F.WriteBuffer(W, 2);
+    F.Seek(W, soFromBeginning);
+    F.WriteBuffer(PAnsiChar(S)^, Length(S) + 1);
+  end;
+
+  if iInstrumentCount > 0 then
+  begin
+    W := F.Position;
+    F.Seek($6, soFromBeginning);
+    F.WriteBuffer(W, 2);
+    F.Seek(W, soFromBeginning);
+    for I := 0 to iInstrumentCount - 1 do
+    begin
+      SongData_GetStr('CMF_Inst#'+IntToStr(I), S);
+      SL := TStringList.Create;
+      SL.Delimiter := ' ';
+      SL.StrictDelimiter := True;
+      SL.DelimitedText := S;
+      for J := 0 to 11 - 1 do
+      begin
+        try
+          B := StrToInt(SL[J]);
+        except
+          B := 0;
+        end;
+        F.WriteBuffer(B, 1);
+      end;
+      B := 0; // Padding
+      F.WriteBuffer(B, 1);
+      F.WriteBuffer(B, 1);
+      F.WriteBuffer(B, 1);
+      F.WriteBuffer(B, 1);
+      F.WriteBuffer(B, 1);
+      SL.Free;
+    end;
+  end;
+
+  // MIDI Track
+  I := TrkCh.ItemIndex;
+  if Length(TrackData[I].Data) > 0 then
+  begin
+    MIDIData := TMemoryStream.Create;
+    WriteTrackData(MIDIData, TrackData[I]);
+
+    W := F.Position;
+    F.Seek($8, soFromBeginning);
+    F.WriteBuffer(W, 2);
+    F.Seek(W, soFromBeginning);
+    F.WriteBuffer(MIDIData.Memory^, MIDIData.Size);
+
+    Log.Lines.Add('[+] Wrote ' + IntToStr(MIDIData.Size) + ' bytes.');
+    MIDIData.Free;
+    for J := 0 to Length(TrackData[I].Data) - 1 do
+      if TrackData[I].Data[J].Status shr 4 = 9 then
+        iChannelInUse[TrackData[I].Data[J].Status and $F] := 1;
+    F.Seek($14, soFromBeginning);
+    F.WriteBuffer(iChannelInUse, 16);
+  end;
+  Progress.Position := 0;
+  F.Seek(0, soFromEnd);
 end;
 
 function MUS_SaveBank(FileName: String): Boolean;
@@ -6595,6 +6732,12 @@ begin
     if TargetEventProfile = 'mid' then
       ConvertEvents('mid');
     WriteRMI(M);
+    Result := True;
+  end;
+  if TargetContainer = 'cmf' then begin
+    if TargetEventProfile = 'cmf' then
+      ConvertEvents('cmf');
+    WriteCMF(M);
     Result := True;
   end;
   if TargetContainer = 'mus' then begin
