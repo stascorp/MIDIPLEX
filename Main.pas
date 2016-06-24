@@ -6503,6 +6503,8 @@ end;
 
 procedure TMainForm.BAddEvntClick(Sender: TObject);
 begin
+  if ActiveControl <> Events then
+    Exit;
   PopEvnt.Popup(MainForm.Left + BAddEvnt.Left + BAddEvnt.Width + 3,
   MainForm.Top + splitH.Top + 44);
 end;
@@ -6525,6 +6527,8 @@ end;
 
 procedure TMainForm.BDelEvntClick(Sender: TObject);
 begin
+  if ActiveControl <> Events then
+    Exit;
   if Events.Selection.Bottom-Events.Selection.Top+1=1 then
     DelEvent(TrkCh.ItemIndex, Events.Row-1, False)
   else
@@ -6597,6 +6601,8 @@ end;
 
 procedure TMainForm.BDelEvntTClick(Sender: TObject);
 begin
+  if ActiveControl <> Events then
+    Exit;
   if Events.Selection.Bottom-Events.Selection.Top+1=1 then
     DelEvent(TrkCh.ItemIndex, Events.Row-1, True)
   else
@@ -9293,6 +9299,8 @@ end;
 
 procedure TMainForm.PCopyClick(Sender: TObject);
 begin
+  if ActiveControl <> Events then
+    Exit;
   CopyBufRange(TrkCh.ItemIndex, Events.Selection.Top-1,
   Events.Selection.Bottom-Events.Selection.Top+1);
 end;
@@ -9304,6 +9312,8 @@ end;
 
 procedure TMainForm.PCutClick(Sender: TObject);
 begin
+  if ActiveControl <> Events then
+    Exit;
   CopyBufRange(TrkCh.ItemIndex, Events.Selection.Top-1,
   Events.Selection.Bottom-Events.Selection.Top+1);
   DelRange(TrkCh.ItemIndex, Events.Selection.Top-1,
@@ -9317,6 +9327,8 @@ procedure TMainForm.PPasteClick(Sender: TObject);
 var
   I,E,Trk,Cnt: Integer;
 begin
+  if ActiveControl <> Events then
+    Exit;
   Cnt:=Length(DCopyBuf);
   Trk:=TrkCh.ItemIndex;
   E:=0;
