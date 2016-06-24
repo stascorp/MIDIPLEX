@@ -1357,9 +1357,9 @@ begin
   SongData_PutInt('CMF_TicksPerQuarter', iTicksPerQuarter);
   SongData_PutInt('CMF_TicksPerSecond', iTicksPerSecond);
 
-  SongData_PutDWord('InitTempo', 500000);
+  SongData_PutDWord('InitTempo', 1000000);
   SongData_PutInt('SMPTE', 0);
-  SongData_PutInt('Division', iTicksPerSecond div 2);
+  SongData_PutInt('Division', iTicksPerSecond);
 
   if W = $0100 then begin
     iInstrumentCount := 0;
