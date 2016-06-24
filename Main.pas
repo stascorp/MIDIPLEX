@@ -490,6 +490,7 @@ type
     procedure Convert_MID_MUS;
     procedure Convert_MDI_MUS;
     procedure Convert_CMF_MID;
+    procedure Convert_CMF_MDI;
     procedure ConvertTicks(RelToAbs: Boolean; var Data: Array of Command);
     procedure CalculateEvnts;
     procedure RefTrackList;
@@ -5054,6 +5055,7 @@ var
   I, J: Integer;
   Val: Byte;
   Rhythm: Boolean;
+  Division: Word;
 begin
   Log.Lines.Add('[*] Converting Creative Music File to Standard MIDI...');
   Application.ProcessMessages;
@@ -5256,7 +5258,248 @@ begin
     TrackData[I].Data[0].Value := 1000000;
     Log.Lines.Add('[+] Track #'+IntToStr(I)+': '+IntToStr(Length(TrackData[I].Data))+' events converted.');
   end;
+  SongData_GetWord('Division', Division);
+  SongData.Strings.Clear;
+
+  SongData_PutInt('MIDIType', 0);
   SongData_PutDWord('InitTempo', 500000);
+  SongData_PutInt('SMPTE', 0);
+  SongData_PutInt('Division', Division);
+  Log.Lines.Add('[+] Done.');
+end;
+
+procedure TMainForm.Convert_CMF_MDI;
+type
+  TOPLRegs = packed record
+    ksl: Byte;
+    multiplier: Byte;
+    feedback: Byte;
+    attack: Byte;
+    sustain: Byte;
+    eg: Byte;
+    decay: Byte;
+    release: Byte;
+    output: Byte;
+    vibam: Byte;
+    vibfq: Byte;
+    envscale: Byte;
+    conn: Byte;
+  end;
+  TMDIInstrument = packed record
+    oplModulator: TOPLRegs;
+    oplCarrier: TOPLRegs;
+    iModWaveSel: Byte;
+    iCarWaveSel: Byte;
+  end;
+  PMDIInstrument = ^TMDIInstrument;
+  TCMFInstrument = packed record
+    iModChar: Byte;
+    iCarChar: Byte;
+    iModScale: Byte;
+    iCarScale: Byte;
+    iModAttack: Byte;
+    iCarAttack: Byte;
+    iModSustain: Byte;
+    iCarSustain: Byte;
+    iModWaveSel: Byte;
+    iCarWaveSel: Byte;
+    iFeedback: Byte;
+  end;
+  PCMFInstrument = ^TCMFInstrument;
+var
+  I, J, K: Integer;
+  Rhythm: Boolean;
+  Division: Word;
+  S: String;
+  SL: TStringList;
+  CMFInst: Array[0..11-1] of Byte;
+  MDIInst: Array[0..13+13+2-1] of Byte;
+  PCMF: PCMFInstrument;
+  PMDI: PMDIInstrument;
+begin
+  Log.Lines.Add('[*] Converting Creative Music File to AdLib MDI...');
+  Application.ProcessMessages;
+  for I := 0 to Length(TrackData) - 1 do begin
+    J := 0;
+    while J < Length(TrackData[I].Data) do begin
+      if TrackData[I].Data[J].Status shr 4 < 15 then
+        if (
+          Rhythm and
+          (TrackData[I].Data[J].Status and $F in [6..10])
+        )
+        or (
+          (not Rhythm) and
+          (TrackData[I].Data[J].Status and $F in [9..15])
+        ) then
+        begin
+          DelEvent(I, J, True);
+          Continue;
+        end;
+      if Rhythm and (TrackData[I].Data[J].Status shr 4 < 15) then
+      begin
+        // convert drums
+        case TrackData[I].Data[J].Status and $F of
+          11: // ch11 -> ch06 - Bass Drum
+            TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 6;
+          12: // ch12 -> ch07 - Snare Drum
+            TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 7;
+          13: // ch13 -> ch08 - Tom
+            TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 8;
+          14: // ch14 -> ch09 - Cymbal
+            TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 9;
+          15: // ch15 -> ch10 - Hi-Hat
+            TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 10;
+        end;
+      end;
+      case TrackData[I].Data[J].Status shr 4 of
+        10, 13: // Poly Aftertouch, Channel Aftertouch
+        begin
+          DelEvent(I, J, True);
+          Continue;
+        end;
+        11: // Control Change
+        begin
+          case TrackData[I].Data[J].BParm1 of
+            7: // Volume Change
+            begin
+              TrackData[I].Data[J].Status := $D0 or TrackData[I].Data[J].Status and $F;
+              TrackData[I].Data[J].BParm1 := TrackData[I].Data[J].BParm2;
+              TrackData[I].Data[J].BParm2 := 0;
+            end;
+            $63: // AM+VIB: Unsupported by MDI
+            begin
+              DelEvent(I, J, True);
+              Continue;
+            end;
+            $66: // Set Marker Byte
+            begin
+              TrackData[I].Data[J].Status := $FF;
+              TrackData[I].Data[J].BParm1 := $06;
+              TrackData[I].Data[J].DataString := IntToStr(TrackData[I].Data[J].BParm2);
+              TrackData[I].Data[J].BParm2 := 0;
+            end;
+            $67: // Rhythm Mode
+            begin
+              Rhythm := TrackData[I].Data[J].BParm2 > 0;
+              TrackData[I].Data[J].Status := $FF;
+              TrackData[I].Data[J].BParm1 := $7F;
+              TrackData[I].Data[J].BParm2 := 0;
+              TrackData[I].Data[J].Len := 6;
+              SetLength(TrackData[I].Data[J].DataArray, 6);
+              TrackData[I].Data[J].DataArray[0] := $00;
+              TrackData[I].Data[J].DataArray[1] := $00;
+              TrackData[I].Data[J].DataArray[2] := $3F; // Ad Lib ID
+              TrackData[I].Data[J].DataArray[3] := $00;
+              TrackData[I].Data[J].DataArray[4] := $02; // Card mode
+              TrackData[I].Data[J].DataArray[5] := Byte(Rhythm);
+            end;
+            $68: // Transpose Up
+            begin
+              DelEvent(I, J, True);
+              Continue;
+              // TODO
+              TrackData[I].Data[J].Status :=
+              $E0 or (TrackData[I].Data[J].Status and $F);
+              TrackData[I].Data[J].Value := 8192 +
+              (TrackData[I].Data[J].BParm2 * 32);
+            end;
+            $69: // Transpose Down
+            begin
+              DelEvent(I, J, True);
+              Continue;
+              // TODO
+              TrackData[I].Data[J].Status :=
+              $E0 or (TrackData[I].Data[J].Status and $F);
+              TrackData[I].Data[J].Value := 8192 -
+              (TrackData[I].Data[J].BParm2 * 32);
+            end;
+          end;
+        end;
+        12: // Program Change
+        begin
+          if not SongData_GetStr('CMF_Inst#'+IntToStr(TrackData[I].Data[J].BParm1), S) then
+          begin
+            DelEvent(I, J, True);
+            Continue;
+          end;
+          SL := TStringList.Create;
+          SL.Delimiter := ' ';
+          SL.StrictDelimiter := True;
+          SL.DelimitedText := S;
+          for K := 0 to 11 - 1 do
+          begin
+            try
+              CMFInst[K] := StrToInt(SL[K]);
+            except
+              CMFInst[K] := 0;
+            end;
+          end;
+          SL.Free;
+          FillChar(MDIInst, SizeOf(MDIInst), 0);
+          PCMF := @CMFInst[0];
+          PMDI := @MDIInst[0];
+          PMDI^.oplModulator.ksl := PCMF^.iModScale shr 6;
+          PMDI^.oplModulator.multiplier := PCMF^.iModChar and $F;
+          PMDI^.oplModulator.feedback := (PCMF^.iFeedback shr 1) and 7;
+          PMDI^.oplModulator.attack := PCMF^.iModAttack shr 4;
+          PMDI^.oplModulator.sustain := PCMF^.iModSustain shr 4;
+          PMDI^.oplModulator.eg := (PCMF^.iModChar shr 5) and 1;
+          PMDI^.oplModulator.decay := PCMF^.iModAttack and $F;
+          PMDI^.oplModulator.release := PCMF^.iModSustain and $F;
+          PMDI^.oplModulator.output := PCMF^.iModScale and $3F;
+          PMDI^.oplModulator.vibam := PCMF^.iModChar shr 7;
+          PMDI^.oplModulator.vibfq := (PCMF^.iModChar shr 6) and 1;
+          PMDI^.oplModulator.envscale := (PCMF^.iModChar shr 4) and 1;
+          PMDI^.oplModulator.conn := (not PCMF^.iFeedback) and 1;
+          PMDI^.oplCarrier.ksl := PCMF^.iCarScale shr 6;
+          PMDI^.oplCarrier.multiplier := PCMF^.iCarChar and $F;
+          PMDI^.oplCarrier.feedback := (not PMDI^.oplModulator.feedback) and $7F;
+          PMDI^.oplCarrier.attack := PCMF^.iCarAttack shr 4;
+          PMDI^.oplCarrier.sustain := PCMF^.iCarSustain shr 4;
+          PMDI^.oplCarrier.eg := (PCMF^.iCarChar shr 5) and 1;
+          PMDI^.oplCarrier.decay := PCMF^.iCarAttack and $F;
+          PMDI^.oplCarrier.release := PCMF^.iCarSustain and $F;
+          PMDI^.oplCarrier.output := PCMF^.iCarScale and $3F;
+          PMDI^.oplCarrier.vibam := PCMF^.iCarChar shr 7;
+          PMDI^.oplCarrier.vibfq := (PCMF^.iCarChar shr 6) and 1;
+          PMDI^.oplCarrier.envscale := (PCMF^.iCarChar shr 4) and 1;
+          PMDI^.oplCarrier.conn := 1;
+          PMDI^.iModWaveSel := PCMF^.iModWaveSel;
+          PMDI^.iCarWaveSel := PCMF^.iCarWaveSel;
+          TrackData[I].Data[J].Len := 6;
+          SetLength(TrackData[I].Data[J].DataArray, 5 + 1 + 13 + 13 + 2);
+          TrackData[I].Data[J].DataArray[0] := $00;
+          TrackData[I].Data[J].DataArray[1] := $00;
+          TrackData[I].Data[J].DataArray[2] := $3F; // Ad Lib ID
+          TrackData[I].Data[J].DataArray[3] := $00;
+          TrackData[I].Data[J].DataArray[4] := $01; // Load Patch
+          TrackData[I].Data[J].DataArray[5] := TrackData[I].Data[J].Status and $F;
+          CopyMemory(@TrackData[I].Data[J].DataArray[6], @MDIInst[0], 13 + 13 + 2);
+          TrackData[I].Data[J].Status := $FF;
+          TrackData[I].Data[J].BParm1 := $7F;
+          TrackData[I].Data[J].BParm2 := 0;
+        end;
+        15: // System
+        begin
+          if (TrackData[I].Data[J].Status = $FF)
+          and (TrackData[I].Data[J].BParm1 = 81) then
+            // convert tempo
+            TrackData[I].Data[J].Value := TrackData[I].Data[J].Value * 2;
+        end;
+      end;
+      Inc(J);
+    end;
+    NewEvent(I, 0, $FF, $51);
+    TrackData[I].Data[0].Value := 1000000;
+    Log.Lines.Add('[+] Track #'+IntToStr(I)+': '+IntToStr(Length(TrackData[I].Data))+' events converted.');
+  end;
+  SongData_GetWord('Division', Division);
+  SongData.Strings.Clear;
+
+  SongData_PutInt('MIDIType', 0);
+  SongData_PutDWord('InitTempo', 500000);
+  SongData_PutInt('SMPTE', 0);
+  SongData_PutInt('Division', Division);
   Log.Lines.Add('[+] Done.');
 end;
 
@@ -8354,6 +8597,11 @@ begin
       Convert_CMF_MID;
       EventProfile := 'mid';
       EventViewProfile := 'mid';
+    end;
+    if DestProfile = 'mdi' then begin
+      Convert_CMF_MDI;
+      EventProfile := 'mdi';
+      EventViewProfile := 'mdi';
     end;
   end;
   if EventProfile = 'mus' then begin
