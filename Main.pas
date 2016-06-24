@@ -7936,6 +7936,9 @@ begin
       case TrackData[Idx].Data[I].Status shr 4 of
         8: // Note Off
         begin
+          Events.Cells[4,I+1]:='Note = '+IntToStr(TrackData[Idx].Data[I].BParm1)+
+          ' ('+NoteNum(TrackData[Idx].Data[I].BParm1)+
+          '), velocity = '+IntToStr(TrackData[Idx].Data[I].BParm2);
           if TrackData[Idx].Data[I].BParm1 = 0 then
             Events.Cells[4,I+1] := 'Velocity = ' +
             IntToStr(TrackData[Idx].Data[I].BParm2);
@@ -7953,6 +7956,9 @@ begin
         end;
         9: // Note On
         begin
+          Events.Cells[4,I+1]:='Note = '+IntToStr(TrackData[Idx].Data[I].BParm1)+
+          ' ('+NoteNum(TrackData[Idx].Data[I].BParm1)+
+          '), velocity = '+IntToStr(TrackData[Idx].Data[I].BParm2);
           S := '';
           if Rhythm then
             case TrackData[Idx].Data[I].Status and 15 of
@@ -8005,6 +8011,11 @@ begin
         8: begin // NoteOff
           if TrackData[Idx].Data[I].BParm1 = 0 then
             Events.Cells[4,I+1] := 'Velocity = ' +
+            IntToStr(TrackData[Idx].Data[I].BParm2)
+          else
+            Events.Cells[4,I+1] := 'Note = ' +
+            IntToStr(TrackData[Idx].Data[I].BParm1) + ' (' +
+            NoteNum(TrackData[Idx].Data[I].BParm1) + '), velocity = ' +
             IntToStr(TrackData[Idx].Data[I].BParm2);
           S := '';
           if Rhythm then
@@ -8019,6 +8030,9 @@ begin
             Events.Cells[4,I+1] := Events.Cells[4,I+1] + ' (' + S + ')';
         end;
         9: begin // NoteOn
+          Events.Cells[4,I+1]:='Note = '+IntToStr(TrackData[Idx].Data[I].BParm1)+
+          ' ('+NoteNum(TrackData[Idx].Data[I].BParm1)+
+          '), velocity = '+IntToStr(TrackData[Idx].Data[I].BParm2);
           S := '';
           if Rhythm then
             case TrackData[Idx].Data[I].Status and 15 of
