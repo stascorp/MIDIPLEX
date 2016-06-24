@@ -491,6 +491,7 @@ type
     procedure Convert_MDI_MUS;
     procedure Convert_CMF_MID;
     procedure Convert_CMF_MDI;
+    procedure Convert_MDI_CMF;
     procedure ConvertTicks(RelToAbs: Boolean; var Data: Array of Command);
     procedure CalculateEvnts;
     procedure RefTrackList;
@@ -3319,8 +3320,7 @@ begin
     F.WriteBuffer(W, 2);
   end;
 
-  SongData_GetStr('CMF_Title', S);
-  if Length(S) > 0 then
+  if SongData_GetStr('CMF_Title', S) and (Length(S) > 0) then
   begin
     W := F.Position;
     F.Seek($E, soFromBeginning);
@@ -3329,8 +3329,7 @@ begin
     F.WriteBuffer(PAnsiChar(S)^, Length(S) + 1);
   end;
 
-  SongData_GetStr('CMF_Composer', S);
-  if Length(S) > 0 then
+  if SongData_GetStr('CMF_Composer', S) and (Length(S) > 0) then
   begin
     W := F.Position;
     F.Seek($10, soFromBeginning);
@@ -3339,8 +3338,7 @@ begin
     F.WriteBuffer(PAnsiChar(S)^, Length(S) + 1);
   end;
 
-  SongData_GetStr('CMF_Remarks', S);
-  if Length(S) > 0 then
+  if SongData_GetStr('CMF_Remarks', S) and (Length(S) > 0) then
   begin
     W := F.Position;
     F.Seek($12, soFromBeginning);
@@ -5500,6 +5498,367 @@ begin
   SongData_PutDWord('InitTempo', 500000);
   SongData_PutInt('SMPTE', 0);
   SongData_PutInt('Division', Division);
+  Log.Lines.Add('[+] Done.');
+end;
+
+procedure TMainForm.Convert_MDI_CMF;
+type
+  TOPLRegs = packed record
+    ksl: Byte;
+    multiplier: Byte;
+    feedback: Byte;
+    attack: Byte;
+    sustain: Byte;
+    eg: Byte;
+    decay: Byte;
+    release: Byte;
+    output: Byte;
+    vibam: Byte;
+    vibfq: Byte;
+    envscale: Byte;
+    conn: Byte;
+  end;
+  TMDIInstrument = packed record
+    oplModulator: TOPLRegs;
+    oplCarrier: TOPLRegs;
+    iModWaveSel: Byte;
+    iCarWaveSel: Byte;
+  end;
+  PMDIInstrument = ^TMDIInstrument;
+  TCMFInstrument = packed record
+    iModChar: Byte;
+    iCarChar: Byte;
+    iModScale: Byte;
+    iCarScale: Byte;
+    iModAttack: Byte;
+    iCarAttack: Byte;
+    iModSustain: Byte;
+    iCarSustain: Byte;
+    iModWaveSel: Byte;
+    iCarWaveSel: Byte;
+    iFeedback: Byte;
+  end;
+  PCMFInstrument = ^TCMFInstrument;
+  TInst = Array[0..13+13+2-1] of Byte;
+  PInst = ^TInst;
+var
+  Notes: Array[0..15] of Array of Byte;
+  NotesReset: Array[0..15] of Boolean;
+  Insts: TList;
+  P: PInst;
+  I,J,K,Idx: Integer;
+  Rhythm: Boolean;
+  Division: Word;
+  Tempo, S: String;
+  CMFInst: Array[0..11-1] of Byte;
+  PCMF: PCMFInstrument;
+  PMDI: PMDIInstrument;
+
+  procedure ClearNotes;
+  var
+    I: Integer;
+  begin
+    for I := 0 to 15 do
+    begin
+      SetLength(Notes[I], 0);
+      NotesReset[I] := False;
+    end;
+  end;
+  function IsNoteOnChannel(Chn, Note: Byte): Boolean;
+  var
+    I: Integer;
+  begin
+    Result := False;
+    for I := 0 to Length(Notes[Chn]) - 1 do
+      if Notes[Chn][I] = Note then
+      begin
+        Result := True;
+        Break;
+      end;
+  end;
+  procedure SetNoteOff(Chn, Note: Byte);
+  var
+    I, Idx: Integer;
+  begin
+    Idx := -1;
+    for I := 0 to Length(Notes[Chn]) - 1 do
+      if Notes[Chn][I] = Note then
+      begin
+        Idx := I;
+        Break;
+      end;
+    if Idx = -1 then
+      Exit;
+    for I := Idx+1 to Length(Notes[Chn]) - 1 do
+      Notes[Chn][I-1] := Notes[Chn][I];
+    SetLength(Notes[Chn], Length(Notes[Chn]) - 1);
+  end;
+begin
+  Rhythm := False;
+  Log.Lines.Add('[*] Converting AdLib MDI to Creative Music File...');
+  Application.ProcessMessages;
+  Insts := TList.Create;
+  Tempo := '';
+  for I := 0 to Length(TrackData) - 1 do
+  begin
+    ClearNotes;
+    J := 0;
+    while J < Length(TrackData[I].Data) do
+    begin
+      if Rhythm and (TrackData[I].Data[J].Status shr 4 < 15) then
+      begin
+        // convert drums
+        case TrackData[I].Data[J].Status and 15 of
+          6: // ch06 -> ch11 - Bass Drum
+            TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 11;
+          7: // ch07 -> ch12 - Snare Drum
+            TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 12;
+          8: // ch08 -> ch13 - Tom
+            TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 13;
+          9: // ch09 -> ch14 - Cymbal
+            TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 14;
+          10: // ch10 -> ch15 - Hi-Hat
+            TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 15;
+        end;
+      end;
+      case TrackData[I].Data[J].Status shr 4 of
+        8: // Note Off
+        begin
+          if TrackData[I].Data[J].BParm1 = 0 then
+          begin
+            // Global Note Off
+            if Length(Notes[TrackData[I].Data[J].Status and $F]) = 0 then
+            begin
+              if not NotesReset[TrackData[I].Data[J].Status and $F] then
+              begin
+                // No notes on channel -> Convert to All Notes Off
+                NotesReset[TrackData[I].Data[J].Status and $F] := True;
+                TrackData[I].Data[J].Status := $B0 or (TrackData[I].Data[J].Status and $F);
+                TrackData[I].Data[J].BParm1 := $7B;
+                TrackData[I].Data[J].BParm2 := 0;
+                Inc(J);
+                Continue;
+              end
+              else
+              begin
+                // Notes already reset
+                DelEvent(I, J, True);
+                Continue;
+              end;
+            end
+            else
+            begin
+              K := TrackData[I].Data[J].Status and $F;
+              TrackData[I].Data[J].BParm1 := Notes[K][0];
+              TrackData[I].Data[J].BParm2 := 0;
+              SetNoteOff(K, Notes[K][0]);
+              for K := 1 to Length(Notes[TrackData[I].Data[J].Status and $F]) - 1 do
+              begin
+                NewEvent(I, J+K, TrackData[I].Data[J].Status, 0);
+                TrackData[I].Data[J+K].Status := TrackData[I].Data[J].Status;
+                TrackData[I].Data[J+K].BParm1 := Notes[TrackData[I].Data[J].Status and $F][K];
+              end;
+            end;
+          end
+          else // Normal Note Off
+            SetNoteOff(TrackData[I].Data[J].Status and $F, TrackData[I].Data[J].BParm1);
+          Inc(J);
+        end;
+        9: // Note On
+        begin
+          if TrackData[I].Data[J].BParm2 = 0 then
+          begin
+            // Treat as Note Off
+            SetNoteOff(TrackData[I].Data[J].Status and $F, TrackData[I].Data[J].BParm1);
+          end
+          else
+            if not IsNoteOnChannel(TrackData[I].Data[J].Status and $F, TrackData[I].Data[J].BParm1) then
+            begin
+              K := TrackData[I].Data[J].Status and $F;
+              SetLength(Notes[K], Length(Notes[K]) + 1);
+              Notes[K][High(Notes[K])] := TrackData[I].Data[J].BParm1;
+            end;
+          Inc(J);
+        end;
+        10..12: Inc(J);
+        13: // Channel Aftertouch -> Volume Change
+        begin
+          TrackData[I].Data[J].Status := $B0 or TrackData[I].Data[J].Status and $F;
+          TrackData[I].Data[J].BParm2 := TrackData[I].Data[J].BParm1;
+          TrackData[I].Data[J].BParm1 := 7;
+          Inc(J);
+        end;
+        14: // Pitch Bend
+        begin
+          // TODO
+          Inc(J);
+        end;
+        15: // System
+        begin
+          if (TrackData[I].Data[J].Status and 15 = 0)
+          or ((TrackData[I].Data[J].Status and 15 = 15)
+          and (TrackData[I].Data[J].BParm1 = $7F))
+          and (Length(TrackData[I].Data[J].DataArray) >= 6)
+          and (TrackData[I].Data[J].DataArray[0] = 0)
+          and (TrackData[I].Data[J].DataArray[1] = 0)
+          and (TrackData[I].Data[J].DataArray[2] = $3F)
+          and (TrackData[I].Data[J].DataArray[3] = 0)
+          then begin
+            case TrackData[I].Data[J].DataArray[4] of
+              1: // Load Patch
+              begin
+                if TrackData[I].Data[J].DataArray[5] < 16 then
+                begin
+                  if Length(TrackData[I].Data[J].DataArray) < 34 then
+                  begin
+                    DelEvent(I, J, True);
+                    Continue;
+                  end;
+                  Idx := -1;
+                  for K := 0 to Insts.Count - 1 do
+                  begin
+                    P := Insts[K];
+                    if CompareMem(@TrackData[I].Data[J].DataArray[6],
+                    @P^[0], 13+13+2) then
+                      Idx := K;
+                  end;
+                  TrackData[I].Data[J].Status :=
+                  $C0 or (TrackData[I].Data[J].DataArray[5] and $F);
+                  if Idx > -1 then
+                    TrackData[I].Data[J].BParm1 := Idx mod 128
+                  else begin
+                    New(P);
+                    CopyMemory(@P^[0],
+                    @TrackData[I].Data[J].DataArray[6], 13+13+2);
+                    TrackData[I].Data[J].BParm1 := Insts.Count mod 128;
+                    Insts.Add(P);
+                  end;
+                  if Rhythm then
+                    case TrackData[I].Data[J].Status and 15 of
+                      6: TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 11;
+                      7: TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 12;
+                      8: TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 13;
+                      9: TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 14;
+                      10: TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 15;
+                    end;
+                  TrackData[I].Data[J].BParm2 := 0;
+                  TrackData[I].Data[J].Len := 0;
+                  SetLength(TrackData[I].Data[J].DataArray, 0);
+                end;
+                Inc(J);
+              end;
+              2: // Rhythm Mode
+              begin
+                Rhythm := TrackData[I].Data[J].DataArray[5] > 0;
+                TrackData[I].Data[J].Status := $B0;
+                TrackData[I].Data[J].BParm1 := $67;
+                TrackData[I].Data[J].BParm2 := Byte(Rhythm);
+                TrackData[I].Data[J].Len := 0;
+                SetLength(TrackData[I].Data[J].DataArray, 0);
+                Inc(J);
+              end;
+              else
+              begin
+                DelEvent(I, J, True);
+                Continue;
+              end;
+            end;
+          end
+          else
+            case TrackData[I].Data[J].BParm1 of
+              81: // Tempo
+              begin
+                if Tempo = '' then
+                  Tempo := IntToStr(TrackData[I].Data[J].Value);
+                DelEvent(I, J, True);
+                Continue;
+              end;
+              else begin
+                DelEvent(I, J, True);
+                Continue;
+              end;
+            end;
+        end;
+      end;
+    end;
+    if not((TrackData[I].Data[Length(TrackData[I].Data)-1].Status = $FF)
+    and (TrackData[I].Data[Length(TrackData[I].Data)-1].BParm1 = $2F)) then
+    begin
+      SetLength(TrackData[I].Data, Length(TrackData[I].Data) + 1);
+      TrackData[I].Data[High(TrackData[I].Data)].Status := $FF;
+      TrackData[I].Data[High(TrackData[I].Data)].BParm1 := $2F;
+    end;
+    Log.Lines.Add('[+] Track #'+IntToStr(I)+': '+IntToStr(Length(TrackData[I].Data))+' events converted.');
+  end;
+
+  SongData_GetWord('Division', Division);
+  SongData.Strings.Clear;
+
+  SongData_PutInt('MIDIType', 0);
+  SongData_PutDWord('InitTempo', 1000000);
+  SongData_PutInt('SMPTE', 0);
+  if Tempo <> '' then
+  begin
+    Division := Round(Division * (1000000 / StrToInt(Tempo)));
+    SongData_PutInt('CMF_Tempo', StrToInt(Tempo) div 1000);
+  end;
+  SongData_PutInt('Division', Division);
+  SongData_PutInt('CMF_TicksPerSecond', Division);
+  SongData_PutInt('CMF_TicksPerQuarter', Division div 2);
+
+  if Insts.Count > 0 then
+  begin
+    for I := 0 to Insts.Count - 1 do
+    begin
+      P := Insts[I];
+      PMDI := Pointer(P);
+      PCMF := @CMFInst[0];
+      FillChar(CMFInst, SizeOf(CMFInst), 0);
+      PCMF^.iModChar :=
+      (PMDI^.oplModulator.multiplier and $F) or
+      (PMDI^.oplModulator.envscale and 1 shl 4) or
+      (PMDI^.oplModulator.eg and 1 shl 5) or
+      (PMDI^.oplModulator.vibfq and 1 shl 6) or
+      (PMDI^.oplModulator.vibam and 1 shl 7);
+      PCMF^.iModScale :=
+      (PMDI^.oplModulator.output and $3F) or
+      (PMDI^.oplModulator.ksl and 3 shl 6);
+      PCMF^.iModAttack :=
+      (PMDI^.oplModulator.decay and $F) or
+      (PMDI^.oplModulator.attack and $F shl 4);
+      PCMF^.iModSustain :=
+      (PMDI^.oplModulator.release and $F) or
+      (PMDI^.oplModulator.sustain and $F shl 4);
+      PCMF^.iModWaveSel := PMDI^.iModWaveSel and 3;
+      PCMF^.iCarChar :=
+      (PMDI^.oplCarrier.multiplier and $F) or
+      (PMDI^.oplCarrier.envscale and 1 shl 4) or
+      (PMDI^.oplCarrier.eg and 1 shl 5) or
+      (PMDI^.oplCarrier.vibfq and 1 shl 6) or
+      (PMDI^.oplCarrier.vibam and 1 shl 7);
+      PCMF^.iCarScale :=
+      (PMDI^.oplCarrier.output and $3F) or
+      (PMDI^.oplCarrier.ksl and 3 shl 6);
+      PCMF^.iCarAttack :=
+      (PMDI^.oplCarrier.decay and $F) or
+      (PMDI^.oplCarrier.attack and $F shl 4);
+      PCMF^.iCarSustain :=
+      (PMDI^.oplCarrier.release and $F) or
+      (PMDI^.oplCarrier.sustain and $F shl 4);
+      PCMF^.iCarWaveSel := PMDI^.iCarWaveSel and 3;
+      PCMF^.iFeedback :=
+      ((not PMDI^.oplModulator.conn) and 1) or
+      (PMDI^.oplModulator.feedback and 7 shl 1);
+      S := '';
+      for J := 0 to Length(CMFInst) - 1 do
+        S := S + IntToStr(CMFInst[J]) + ' ';
+      SongData_PutStr('CMF_Inst#'+IntToStr(I), S);
+      Dispose(P);
+    end;
+    Insts.Clear;
+  end;
+  Insts.Free;
+
   Log.Lines.Add('[+] Done.');
 end;
 
@@ -8597,6 +8956,11 @@ begin
       Convert_MDI_MUS;
       EventProfile := 'mus';
       EventViewProfile := 'mus';
+    end;
+    if DestProfile = 'cmf' then begin
+      Convert_MDI_CMF;
+      EventProfile := 'cmf';
+      EventViewProfile := 'cmf';
     end;
   end;
   if EventProfile = 'xmi' then begin
