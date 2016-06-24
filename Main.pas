@@ -3252,6 +3252,8 @@ begin
   if Length(TrackData) = 0 then
     goto Done;
   for I := 0 to Length(TrackData) - 1 do begin
+    if (Ver = 0) and (I <> TrkCh.ItemIndex) then
+      Continue;
     Log.Lines.Add('[*] Writing track '+IntToStr(I)+'...');
     F.WriteBuffer(PAnsiChar(Track)^, 4);
     C := 0;
