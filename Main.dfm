@@ -827,6 +827,19 @@ object MainForm: TMainForm
         object MWin32: TMenuItem
           Caption = 'Win32 MIDI'
           Checked = True
+          object MW32Refresh: TMenuItem
+            Caption = '&Refresh devices'
+            OnClick = MW32RefreshClick
+          end
+          object N13: TMenuItem
+            Caption = '-'
+          end
+          object MW32Mapper: TMenuItem
+            Caption = 'MIDI Mapper'
+            Checked = True
+            RadioItem = True
+            OnClick = MW32MapperClick
+          end
         end
       end
       object MOutConf: TMenuItem

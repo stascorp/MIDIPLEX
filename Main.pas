@@ -285,6 +285,9 @@ type
     bStop: TBitBtn;
     MFormatXMI: TMenuItem;
     MProfileXMI: TMenuItem;
+    MW32Mapper: TMenuItem;
+    N13: TMenuItem;
+    MW32Refresh: TMenuItem;
     procedure BtOpenClick(Sender: TObject);
     procedure FormCreate(Sender: TObject);
     procedure TrkChChange(Sender: TObject);
@@ -454,6 +457,8 @@ type
     procedure MAboutClick(Sender: TObject);
     procedure MFormatXMIClick(Sender: TObject);
     procedure MProfileXMIClick(Sender: TObject);
+    procedure MW32RefreshClick(Sender: TObject);
+    procedure MW32MapperClick(Sender: TObject);
   private
     { Private declarations }
     procedure OnEventChange(var Msg: TMessage); message WM_EVENTIDX;
@@ -533,6 +538,7 @@ var
   BCopyBuf: Boolean = False;
   DCopyBuf: Array of Command;
   // Player
+  MIDIDev: Integer = MIDI_MAPPER;
   MIDIOut: HMIDIOUT;
   MIDIThr: THandle;
   MIDIThrId: Cardinal;
@@ -7472,7 +7478,7 @@ begin
     Exit;
   end;
 
-  Err := midiOutOpen(@NewMIDIOut, MIDI_MAPPER, 0, 0, CALLBACK_NULL);
+  Err := midiOutOpen(@NewMIDIOut, MIDIDev, 0, 0, CALLBACK_NULL);
   if Err <> MMSYSERR_NOERROR then
     Exit;
   MIDIOut := NewMIDIOut;
@@ -7897,6 +7903,7 @@ begin
   OpenDialog.Filter :=
     StringReplace(OpenDialog.Filter, '||', '|'+AllStr+'|', []);
 
+  MW32RefreshClick(Sender);
   ChkButtons;
 end;
 
@@ -9348,6 +9355,58 @@ procedure TMainForm.MLoopSongClick(Sender: TObject);
 begin
   LoopEnabled := not LoopEnabled;
   MLoopSong.Checked := LoopEnabled;
+end;
+
+procedure TMainForm.MW32RefreshClick(Sender: TObject);
+var
+  C: Cardinal;
+  I: Integer;
+  lpCaps: TMidiOutCaps;
+  M: TMenuItem;
+begin
+  C := 0;
+  while MWin32.Count > 3 do
+  begin
+    M := MWin32.FindComponent('MW32_' + IntToStr(C)) as TMenuItem;
+    M.Free;
+    Inc(C);
+  end;
+  C := midiOutGetNumDevs();
+  for I := 0 to C - 1 do
+    if midiOutGetDevCaps(Cardinal(I), @lpCaps, SizeOf(lpCaps)) = MMSYSERR_NOERROR then
+    begin
+      M := TMenuItem.Create(MWin32);
+      M.Name := 'MW32_' + IntToStr(I);
+      M.RadioItem := True;
+      M.Checked := MIDIDev = I;
+      M.Caption := lpCaps.szPname;
+      M.OnClick := MW32MapperClick;
+      MWin32.Add(M);
+    end;
+end;
+
+procedure TMainForm.MW32MapperClick(Sender: TObject);
+var
+  M, OM: TMenuItem;
+  I: Integer;
+begin
+  M := Sender as TMenuItem;
+  if M.Name = 'MW32Mapper' then
+    I := MIDI_MAPPER
+  else
+    I := StrToInt(Copy(M.Name, 6, Length(M.Name) - 5));
+  if MIDIDev = MIDI_MAPPER then
+    MW32Mapper.Checked := False
+  else
+  begin
+    OM := MWin32.FindComponent('MW32_' + IntToStr(MIDIDev)) as TMenuItem;
+    if OM <> nil then
+      OM.Checked := False;
+  end;
+  MIDIDev := I;
+  M.Checked := True;
+  MSynth.Checked := False;
+  MWin32.Checked := True;
 end;
 
 procedure TMainForm.Evnt128Click(Sender: TObject);
