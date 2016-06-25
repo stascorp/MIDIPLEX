@@ -3216,7 +3216,7 @@ const
 var
   Ver, Division: Word;
   SMPTE: ShortInt;
-  C: Cardinal;
+  C, Cnt: Cardinal;
   I: Integer;
   TrkOffset: Cardinal;
   TrackStream: TMemoryStream;
@@ -3249,6 +3249,7 @@ begin
     F.WriteBuffer(SMPTE, 1);
     F.WriteBuffer(Division, 1);
   end;
+  Cnt := 0;
   if Length(TrackData) = 0 then
     goto Done;
   for I := 0 to Length(TrackData) - 1 do begin
@@ -3275,6 +3276,7 @@ begin
           J / (Length(TrackData[I].Data) * Length(TrackData))) * 100);
       end;}
     C := F.Position - TrkOffset;
+    Inc(Cnt);
     Log.Lines.Add('[+] Wrote ' + IntToStr(C) + ' bytes.');
     F.Seek(TrkOffset - 4, 0);
     C := (C shr 24) or ((C shr 8) and $FF00)
@@ -3283,6 +3285,12 @@ begin
     F.Seek(F.Size, 0);
   end;
   Done:
+  // Write final track count
+  F.Seek($A, soFromBeginning);
+  C := Cnt;
+  C := (C shr 8) or ((C and $FF) shl 8);
+  F.WriteBuffer(C, 2);
+  F.Seek(0, soFromEnd);
   Progress.Position := 0;
 end;
 
