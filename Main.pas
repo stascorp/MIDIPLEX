@@ -3356,13 +3356,26 @@ const
   INFO = 'INFO';
   CAT  = 'CAT ';
   XMID = 'XMID';
+  TIMB = 'TIMB';
   EVNT = 'EVNT';
 var
   Ver: Word;
   C, Cnt: Cardinal;
-  I: Integer;
+  I, J: Integer;
   Track: TMemoryStream;
+  Timbre: Array of Byte;
   Events: TMemoryStream;
+
+  function TimbreAdded(B: Byte): Boolean;
+  var
+    I: Integer;
+  begin
+    Result := True;
+    for I := 0 to Length(Timbre) - 1 do
+      if (I mod 2 = 0) and (Timbre[I] = B) then
+        Exit;
+    Result := False;
+  end;
 begin
   Log.Lines.Add('[*] Writing Extended MIDI file...');
 
@@ -3404,6 +3417,44 @@ begin
     Log.Lines.Add('[*] Writing track '+IntToStr(I)+'...');
     F.WriteBuffer(PAnsiChar(FORM)^, 4);
     Track := TMemoryStream.Create;
+    SetLength(Timbre, 0);
+    for J := 0 to Length(TrackData[I].Data) - 1 do
+      case TrackData[I].Data[J].Status shr 4 of
+        11:
+          if TrackData[I].Data[J].BParm1 = 114 then
+            if Odd(Length(Timbre)) then
+            begin
+              SetLength(Timbre, Length(Timbre) + 1);
+              Timbre[Length(Timbre) - 1] := TrackData[I].Data[J].BParm2;
+            end;
+        12:
+          if not TimbreAdded(TrackData[I].Data[J].BParm1) then
+          begin
+            if Odd(Length(Timbre)) then
+            begin
+              SetLength(Timbre, Length(Timbre) + 1);
+              Timbre[Length(Timbre) - 1] := 0;
+            end;
+            SetLength(Timbre, Length(Timbre) + 1);
+            Timbre[Length(Timbre) - 1] := TrackData[I].Data[J].BParm1;
+          end;
+      end;
+    if Length(Timbre) > 0 then
+    begin
+      if Odd(Length(Timbre)) then
+      begin
+        SetLength(Timbre, Length(Timbre) + 1);
+        Timbre[Length(Timbre) - 1] := 0;
+      end;
+      Track.WriteBuffer(PAnsiChar(TIMB)^, 4);
+      C := 2 + Length(Timbre);
+      C := (C shr 24) or ((C shr 8) and $FF00)
+      or ((C shl 8) and $FF0000) or ((C and $FF) shl 24);
+      Track.WriteBuffer(C, 4);
+      C := Length(Timbre) div 2;
+      Track.WriteBuffer(C, 2);
+      Track.WriteBuffer(Timbre[0], Length(Timbre));
+    end;
     Track.WriteBuffer(PAnsiChar(EVNT)^, 4);
     C := 0;
     Events := TMemoryStream.Create;
