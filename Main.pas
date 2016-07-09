@@ -6684,6 +6684,9 @@ begin
       EditDialog.Velocity.Visible:=True;
       EditDialog.VelLabel.Visible:=True;
       EditDialog.Label4.Visible:=True;
+      EditDialog.NoteDur.Visible := False;
+      EditDialog.lNoteDur.Visible := False;
+      EditDialog.lNoteDurRes.Visible := False;
       if EditDialog.Chn.ItemIndex<>9 then
         EditDialog.Note.ItemIndex:=127-E^.BParm1
       else
@@ -6692,6 +6695,17 @@ begin
       EditDialog.VelLabel.Caption:=IntToStr(E^.BParm2);
       EditDialog.PageControl1.TabIndex:=1;
       EditDialog.ChangeHeight(2);
+      if EventProfile = 'xmi' then
+      begin
+        EditDialog.Caption:='Event: Play Note';
+        EditDialog.ChnChange(Sender);
+        EditDialog.NoteDur.Value := E^.Len;
+        EditDialog.NoteDur.Visible := True;
+        EditDialog.lNoteDur.Visible := True;
+        EditDialog.lNoteDurRes.Caption := '(in ticks)';
+        EditDialog.lNoteDurRes.Visible := True;
+        EditDialog.ChangeHeight(3);
+      end;
     end;
     10: begin
       EditDialog.Caption:='Event: Polyphonic Aftertouch';
@@ -6945,6 +6959,8 @@ begin
       else
         E^.BParm1:=EditDialog.Note.ItemIndex;
       E^.BParm2:=EditDialog.Velocity.Position;
+      if EventProfile = 'xmi' then
+        E^.Len := EditDialog.NoteDur.Value;
     end;
     10: begin
       if EditDialog.Chn.ItemIndex<>9 then

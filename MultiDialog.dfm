@@ -21,7 +21,7 @@ object EditDialog: TEditDialog
     Top = -5
     Width = 433
     Height = 273
-    ActivePage = Search
+    ActivePage = TNote
     TabOrder = 2
     TabStop = False
     object Range: TTabSheet
@@ -72,10 +72,6 @@ object EditDialog: TEditDialog
       Tag = 2
       Caption = 'Note'
       ImageIndex = 1
-      ExplicitLeft = 0
-      ExplicitTop = 0
-      ExplicitWidth = 0
-      ExplicitHeight = 0
       object Label3: TLabel
         Left = 38
         Top = 38
@@ -97,13 +93,28 @@ object EditDialog: TEditDialog
         Height = 13
         Caption = 'VelLabel'
       end
+      object lNoteDur: TLabel
+        Left = 20
+        Top = 94
+        Width = 45
+        Height = 13
+        Caption = 'Duration:'
+        Visible = False
+      end
+      object lNoteDurRes: TLabel
+        Left = 161
+        Top = 94
+        Width = 8
+        Height = 13
+        Caption = '()'
+      end
       object Velocity: TTrackBar
         Left = 65
         Top = 62
         Width = 193
         Height = 24
         Max = 127
-        TabOrder = 0
+        TabOrder = 1
         TickMarks = tmBoth
         TickStyle = tsNone
         OnChange = VelocityChange
@@ -114,7 +125,18 @@ object EditDialog: TEditDialog
         Width = 130
         Height = 21
         Style = csDropDownList
-        TabOrder = 1
+        TabOrder = 0
+      end
+      object NoteDur: TSpinEdit
+        Left = 71
+        Top = 91
+        Width = 84
+        Height = 22
+        MaxValue = 2147483647
+        MinValue = 0
+        TabOrder = 2
+        Value = 0
+        Visible = False
       end
     end
     object Empty: TTabSheet

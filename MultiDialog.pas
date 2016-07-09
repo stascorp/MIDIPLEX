@@ -151,6 +151,9 @@ type
     StaticText4: TStaticText;
     EVal1Op: TComboBox;
     EVal2Op: TComboBox;
+    NoteDur: TSpinEdit;
+    lNoteDur: TLabel;
+    lNoteDurRes: TLabel;
     procedure FormCreate(Sender: TObject);
     procedure VelocityChange(Sender: TObject);
     procedure ChnChange(Sender: TObject);
