@@ -44,7 +44,7 @@ end;
 function IFFGetNodes(Tree: AnsiString; P: Pointer; Offs, MaxSz: Cardinal;
   var Nodes: IFFNodes): Integer;
 var
-  Pos: Integer;
+  Pos: Cardinal;
   LastName: AnsiString;
   LastSize: Cardinal;
   IsSub: Boolean;

@@ -540,7 +540,7 @@ var
   BCopyBuf: Boolean = False;
   DCopyBuf: Array of Command;
   // Player
-  MIDIDev: Integer = MIDI_MAPPER;
+  MIDIDev: DWORD = MIDI_MAPPER;
   MIDIOut: HMIDIOUT;
   MIDIThr: THandle;
   MIDIThrId: Cardinal;
@@ -1845,6 +1845,7 @@ var
   end;
 begin
   StatByte := False;
+  Ticks := 0;
   ReadTicks := True;
   while F.Position < F.Size do begin
     if ReadTicks then begin
@@ -5376,6 +5377,7 @@ var
 begin
   Log.Lines.Add('[*] Converting Creative Music File to Standard MIDI...');
   Application.ProcessMessages;
+  Rhythm := False;
   for I := 0 to Length(TrackData) - 1 do begin
     J := 0;
     while J < Length(TrackData[I].Data) do begin
@@ -5636,6 +5638,7 @@ var
 begin
   Log.Lines.Add('[*] Converting Creative Music File to AdLib MDI...');
   Application.ProcessMessages;
+  Rhythm := False;
   for I := 0 to Length(TrackData) - 1 do begin
     J := 0;
     while J < Length(TrackData[I].Data) do begin
@@ -9238,11 +9241,11 @@ begin
   for J := 0 to Length(Prgs)-1 do // finish last
     if Prgs[J].Val = Last then begin
       Prgs[J].Ranges[Length(Prgs[J].Ranges)-1].Full := True;
-      if (TrackData[Trk].Data[I-1].Status = $FF) and
-      (TrackData[Trk].Data[I-1].BParm1 = $2F) then
-        Prgs[J].Ranges[Length(Prgs[J].Ranges)-1].VTo := I-2
+      if (TrackData[Trk].Data[High(TrackData[Trk].Data)].Status = $FF) and
+      (TrackData[Trk].Data[High(TrackData[Trk].Data)].BParm1 = $2F) then
+        Prgs[J].Ranges[Length(Prgs[J].Ranges)-1].VTo := High(TrackData[Trk].Data)-1
       else
-        Prgs[J].Ranges[Length(Prgs[J].Ranges)-1].VTo := I-1;
+        Prgs[J].Ranges[Length(Prgs[J].Ranges)-1].VTo := High(TrackData[Trk].Data);
       Break;
     end;
   Log.Lines.Add('[+] Found '+IntToStr(Length(Prgs))+' different program changes.');
@@ -9654,7 +9657,7 @@ begin
       M := TMenuItem.Create(MWin32);
       M.Name := 'MW32_' + IntToStr(I);
       M.RadioItem := True;
-      M.Checked := MIDIDev = I;
+      M.Checked := Integer(MIDIDev) = I;
       M.Caption := lpCaps.szPname;
       M.OnClick := MW32MapperClick;
       MWin32.Add(M);
@@ -9668,7 +9671,7 @@ var
 begin
   M := Sender as TMenuItem;
   if M.Name = 'MW32Mapper' then
-    I := MIDI_MAPPER
+    I := Integer(MIDI_MAPPER)
   else
     I := StrToInt(Copy(M.Name, 6, Length(M.Name) - 5));
   if MIDIDev = MIDI_MAPPER then
@@ -9679,7 +9682,7 @@ begin
     if OM <> nil then
       OM.Checked := False;
   end;
-  MIDIDev := I;
+  MIDIDev := DWORD(I);
   M.Checked := True;
   MSynth.Checked := False;
   MWin32.Checked := True;
