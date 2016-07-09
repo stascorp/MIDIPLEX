@@ -490,11 +490,13 @@ type
     procedure ReadTrackData_SYX(var F: TMemoryStream; var Trk: Chunk);
     procedure WriteMIDI(var F: TMemoryStream);
     procedure WriteRMI(var F: TMemoryStream);
+    procedure WriteXMI(var F: TMemoryStream);
     procedure WriteCMF(var F: TMemoryStream);
     procedure WriteMUS(var F: TMemoryStream; FileName: String);
     procedure WriteRaw(var F: TMemoryStream);
     procedure WriteSYX(var F: TMemoryStream);
     procedure WriteTrackData(var F: TMemoryStream; var Trk: Chunk);
+    procedure WriteTrackData_XMI(var F: TMemoryStream; var Trk: Chunk);
     procedure WriteTrackData_MUS(var F: TMemoryStream; var Trk: Chunk);
     procedure WriteTrackData_SYX(var F: TMemoryStream; var Trk: Chunk);
     procedure ConvertEvents(DestProfile: AnsiString);
@@ -787,6 +789,20 @@ begin
       A[I]:=A[I] or 128;
     F.WriteBuffer(A[I],1);
   end;
+end;
+
+procedure WriteVarVal_XMI(var F: TMemoryStream; Val: UInt64);
+var
+  B: Byte;
+begin
+  B := $7F;
+  while Val > B do
+  begin
+    F.WriteBuffer(B, 1);
+    Val := Val - B;
+  end;
+  if Val > 0 then
+    F.WriteBuffer(Val, 1);
 end;
 
 procedure WriteVarVal_MUS(var F: TMemoryStream; Val: UInt64);
@@ -3333,6 +3349,96 @@ begin
   F.Seek(F.Size, soFromBeginning);
 end;
 
+procedure TMainForm.WriteXMI(var F: TMemoryStream);
+const
+  FORM = 'FORM';
+  XDIR = 'XDIR';
+  INFO = 'INFO';
+  CAT  = 'CAT ';
+  XMID = 'XMID';
+  EVNT = 'EVNT';
+var
+  Ver: Word;
+  C, Cnt: Cardinal;
+  I: Integer;
+  Track: TMemoryStream;
+  Events: TMemoryStream;
+begin
+  Log.Lines.Add('[*] Writing Extended MIDI file...');
+
+  if not SongData_GetWord('MIDIType', Ver) then
+  begin
+    Log.Lines.Add('[-] MIDI Type is not defined.');
+    Exit;
+  end;
+  if Ver = 1 then
+  begin
+    Log.Lines.Add('[-] MIDI Type-1 is not supported by XMIDI.');
+    Exit;
+  end;
+
+  Log.Lines.Add('[*] Writing XMIDI header...');
+  F.WriteBuffer(PAnsiChar(FORM)^, 4);
+  C := 14;
+  C := (C shr 24) or ((C shr 8) and $FF00)
+  or ((C shl 8) and $FF0000) or ((C and $FF) shl 24);
+  F.WriteBuffer(C, 4);
+  F.WriteBuffer(PAnsiChar(XDIR)^, 4);
+  F.WriteBuffer(PAnsiChar(INFO)^, 4);
+  C := 2;
+  C := (C shr 24) or ((C shr 8) and $FF00)
+  or ((C shl 8) and $FF0000) or ((C and $FF) shl 24);
+  F.WriteBuffer(C, 4);
+  C := 0; // track count
+  F.WriteBuffer(C, 2);
+
+  F.WriteBuffer(PAnsiChar(CAT)^, 4);
+  C := 0; // catalog size
+  F.WriteBuffer(C, 4);
+  F.WriteBuffer(PAnsiChar(XMID)^, 4);
+
+  Cnt := 0;
+  for I := 0 to Length(TrackData) - 1 do begin
+    if (Ver = 0) and (I <> TrkCh.ItemIndex) then
+      Continue;
+    Log.Lines.Add('[*] Writing track '+IntToStr(I)+'...');
+    F.WriteBuffer(PAnsiChar(FORM)^, 4);
+    Track := TMemoryStream.Create;
+    Track.WriteBuffer(PAnsiChar(EVNT)^, 4);
+    C := 0;
+    Events := TMemoryStream.Create;
+    WriteTrackData_XMI(Events, TrackData[I]);
+    if Odd(Events.Size) then
+      Events.WriteBuffer(C, 1);
+    C := Events.Size;
+    C := (C shr 24) or ((C shr 8) and $FF00)
+    or ((C shl 8) and $FF0000) or ((C and $FF) shl 24);
+    Track.WriteBuffer(C, 4);
+    Track.WriteBuffer(Events.Memory^, Events.Size);
+    Events.Free;
+    C := Track.Size + 4;
+    C := (C shr 24) or ((C shr 8) and $FF00)
+    or ((C shl 8) and $FF0000) or ((C and $FF) shl 24);
+    F.WriteBuffer(C, 4);
+    F.WriteBuffer(PAnsiChar(XMID)^, 4);
+    F.WriteBuffer(Track.Memory^, Track.Size);
+    Log.Lines.Add('[+] Wrote ' + IntToStr(Track.Size) + ' bytes.');
+    Track.Free;
+    Inc(Cnt);
+  end;
+  // track count
+  F.Seek($14, soFromBeginning);
+  F.WriteBuffer(Cnt, 2);
+  // catalog size
+  F.Seek($1A, soFromBeginning);
+  C := F.Size - $1E;
+  C := (C shr 24) or ((C shr 8) and $FF00)
+  or ((C shl 8) and $FF0000) or ((C and $FF) shl 24);
+  F.WriteBuffer(C, 4);
+
+  F.Seek(F.Size, soFromBeginning);
+end;
+
 procedure TMainForm.WriteCMF(var F: TMemoryStream);
 const
   CTMF = 'CTMF';
@@ -3698,6 +3804,93 @@ begin
       F.WriteBuffer(Trk.Data[J].Status, 1);
     case Trk.Data[J].Status shr 4 of
       8..11: begin
+        F.WriteBuffer(Trk.Data[J].BParm1, 1);
+        F.WriteBuffer(Trk.Data[J].BParm2, 1);
+      end;
+      12,13:
+        F.WriteBuffer(Trk.Data[J].BParm1, 1);
+      14: begin
+        Trk.Data[J].BParm1 := Trk.Data[J].Value and 127;
+        Trk.Data[J].BParm2 := (Trk.Data[J].Value shr 7) and 127;
+        F.WriteBuffer(Trk.Data[J].BParm1, 1);
+        F.WriteBuffer(Trk.Data[J].BParm2, 1);
+      end;
+      15: begin
+        case Trk.Data[J].Status and 15 of
+          0,7: begin
+            WriteVarVal(F, Length(Trk.Data[J].DataArray));
+            for K := 0 to Length(Trk.Data[J].DataArray) - 1 do
+              F.WriteBuffer(Trk.Data[J].DataArray[K], 1);
+          end;
+          1,3: F.WriteBuffer(Trk.Data[J].BParm1, 1);
+          2: begin
+            Trk.Data[J].BParm1 := (Trk.Data[J].Value shr 7) and 127;
+            Trk.Data[J].BParm2 := Trk.Data[J].Value and 127;
+            F.WriteBuffer(Trk.Data[J].BParm1, 1);
+            F.WriteBuffer(Trk.Data[J].BParm2, 1);
+          end;
+          15: begin
+            F.WriteBuffer(Trk.Data[J].BParm1, 1);
+            case Trk.Data[J].BParm1 of
+              0: begin
+                SetLength(Trk.Data[J].DataArray, 2);
+                Trk.Data[J].DataArray[0]:=
+                (Trk.Data[J].Value shr 8) and $FF;
+                Trk.Data[J].DataArray[1]:=
+                Trk.Data[J].Value and $FF;
+                WriteVarVal(F, Length(Trk.Data[J].DataArray));
+                for K := 0 to Length(Trk.Data[J].DataArray) - 1 do
+                  F.WriteBuffer(Trk.Data[J].DataArray[K], 1);
+              end;
+              1..7: begin
+                WriteVarVal(F, Length(Trk.Data[J].DataString));
+                S := PAnsiChar(Trk.Data[J].DataString);
+                F.WriteBuffer(S^, Length(Trk.Data[J].DataString));
+              end;
+              32,33: begin
+                WriteVarVal(F, 1);
+                F.WriteBuffer(Trk.Data[J].Value, 1);
+              end;
+              81: begin
+                SetLength(Trk.Data[J].DataArray, 3);
+                Trk.Data[J].DataArray[0]:=
+                (Trk.Data[J].Value shr 16) and $FF;
+                Trk.Data[J].DataArray[1]:=
+                (Trk.Data[J].Value shr 8) and $FF;
+                Trk.Data[J].DataArray[2]:=
+                Trk.Data[J].Value and $FF;
+                WriteVarVal(F, Length(Trk.Data[J].DataArray));
+                for K := 0 to Length(Trk.Data[J].DataArray) - 1 do
+                  F.WriteBuffer(Trk.Data[J].DataArray[K], 1);
+              end;
+              else begin
+                WriteVarVal(F, Length(Trk.Data[J].DataArray));
+                for K := 0 to Length(Trk.Data[J].DataArray) - 1 do
+                  F.WriteBuffer(Trk.Data[J].DataArray[K], 1);
+              end;
+            end;
+          end;
+        end;
+      end;
+    end;
+  end;
+end;
+
+procedure TMainForm.WriteTrackData_XMI(var F: TMemoryStream; var Trk: Chunk);
+var
+  S: PAnsiChar;
+  J, K: Integer;
+begin
+  for J := 0 to Length(Trk.Data) - 1 do begin
+    WriteVarVal_XMI(F, Trk.Data[J].Ticks);
+    F.WriteBuffer(Trk.Data[J].Status, 1);
+    case Trk.Data[J].Status shr 4 of
+      8,9: begin
+        F.WriteBuffer(Trk.Data[J].BParm1, 1);
+        F.WriteBuffer(Trk.Data[J].BParm2, 1);
+        WriteVarVal(F, Trk.Data[J].Len);
+      end;
+      10,11: begin
         F.WriteBuffer(Trk.Data[J].BParm1, 1);
         F.WriteBuffer(Trk.Data[J].BParm2, 1);
       end;
@@ -7769,6 +7962,12 @@ begin
     if TargetEventProfile = 'mid' then
       ConvertEvents('mid');
     WriteRMI(M);
+    Result := True;
+  end;
+  if TargetContainer = 'xmi' then begin
+    if TargetEventProfile = 'xmi' then
+      ConvertEvents('xmi');
+    WriteXMI(M);
     Result := True;
   end;
   if TargetContainer = 'cmf' then begin
