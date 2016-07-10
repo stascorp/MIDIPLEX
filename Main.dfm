@@ -232,7 +232,7 @@ object MainForm: TMainForm
     Height = 315
     Align = alLeft
     BevelOuter = bvNone
-    TabOrder = 3
+    TabOrder = 1
     object BAddEvnt: TSpeedButton
       Left = 0
       Top = 0

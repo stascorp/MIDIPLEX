@@ -188,7 +188,7 @@ object EditDialog: TEditDialog
         Width = 130
         Height = 21
         Style = csDropDownList
-        TabOrder = 0
+        TabOrder = 1
       end
       object Pressure: TTrackBar
         Left = 65
@@ -196,7 +196,7 @@ object EditDialog: TEditDialog
         Width = 193
         Height = 24
         Max = 127
-        TabOrder = 1
+        TabOrder = 0
         TickMarks = tmBoth
         TickStyle = tsNone
         OnChange = PressureChange
@@ -390,7 +390,7 @@ object EditDialog: TEditDialog
         PopupMenu = HexKeys
         ReadOnly = True
         ScrollBars = ssVertical
-        TabOrder = 0
+        TabOrder = 1
         WordWrap = False
         OnClick = HexMemoClick
       end
@@ -413,7 +413,7 @@ object EditDialog: TEditDialog
         PopupMenu = CharMenu
         ReadOnly = True
         ScrollBars = ssVertical
-        TabOrder = 1
+        TabOrder = 3
         WordWrap = False
         OnClick = CharMemoClick
       end
@@ -442,7 +442,7 @@ object EditDialog: TEditDialog
         Height = 18
         BevelOuter = bvLowered
         Caption = 'Insert'
-        TabOrder = 3
+        TabOrder = 0
       end
       object ScrollBar: TScrollBar
         Left = 284
@@ -651,7 +651,7 @@ object EditDialog: TEditDialog
         Items.Strings = (
           'Major'
           'Minor')
-        TabOrder = 0
+        TabOrder = 1
       end
       object KeyVal: TSpinEdit
         Left = 71
@@ -660,7 +660,7 @@ object EditDialog: TEditDialog
         Height = 22
         MaxValue = 127
         MinValue = -128
-        TabOrder = 1
+        TabOrder = 0
         Value = 0
         OnChange = KeyValChange
       end
@@ -706,7 +706,7 @@ object EditDialog: TEditDialog
         Items.Strings = (
           'PPQN'
           'TPF')
-        TabOrder = 0
+        TabOrder = 2
         OnClick = DResClick
       end
       object DVal: TSpinEdit
@@ -716,7 +716,7 @@ object EditDialog: TEditDialog
         Height = 22
         MaxValue = 32767
         MinValue = 0
-        TabOrder = 1
+        TabOrder = 0
         Value = 0
       end
       object DSMPTE: TSpinEdit
@@ -726,7 +726,7 @@ object EditDialog: TEditDialog
         Height = 22
         MaxValue = 128
         MinValue = 1
-        TabOrder = 2
+        TabOrder = 1
         Value = 1
       end
     end
