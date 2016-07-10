@@ -501,6 +501,7 @@ type
     procedure WriteTrackData_SYX(var F: TMemoryStream; var Trk: Chunk);
     procedure ConvertEvents(DestProfile: AnsiString);
     procedure Convert_XMI_MID;
+    procedure Convert_MID_XMI;
     procedure Convert_MUS_MID;
     procedure Convert_MUS_MDI;
     procedure Convert_MDI_MID;
@@ -510,6 +511,8 @@ type
     procedure Convert_CMF_MDI;
     procedure Convert_MDI_CMF;
     procedure ConvertTicks(RelToAbs: Boolean; var Data: Array of Command);
+    procedure MergeTracksByTicks;
+    procedure MergeTracksByOrder;
     procedure CalculateEvnts;
     procedure RefTrackList;
     procedure ChkButtons;
@@ -3386,10 +3389,7 @@ begin
     Exit;
   end;
   if Ver = 1 then
-  begin
-    Log.Lines.Add('[-] MIDI Type-1 is not supported by XMIDI.');
-    Exit;
-  end;
+    Log.Lines.Add('[*] Warning: MIDI Type-1 is not supported by XMIDI.');
 
   Log.Lines.Add('[*] Writing XMIDI header...');
   F.WriteBuffer(PAnsiChar(FORM)^, 4);
@@ -4252,6 +4252,20 @@ begin
             end;
         end;
       end;
+      if (Durations.Count > 0)
+      and (J = High(TrackData[I].Data))
+      and (TrackData[I].Data[J].Status = $FF)
+      and (TrackData[I].Data[J].BParm1 = $2F) then
+      begin
+        TrackData[I].Data[J].Ticks := 0;
+        for K := 0 to Durations.Count - 1 do
+        begin
+          PDur := Durations[K];
+          if TrackData[I].Data[J].Ticks < PDur^.Ticks then
+            TrackData[I].Data[J].Ticks := PDur^.Ticks;
+        end;
+        Continue;
+      end;
       Inc(J);
     end;
     if Durations.Count > 0 then
@@ -4264,6 +4278,125 @@ begin
     Durations.Free;
     Log.Lines.Add('[+] Track #'+IntToStr(I)+': '+IntToStr(Length(TrackData[I].Data))+' events converted.');
   end;
+  Log.Lines.Add('[+] Done.');
+end;
+
+procedure TMainForm.Convert_MID_XMI;
+type
+  TNote = record
+    Chan, Note: Byte;
+    Index: Integer;
+    Duration: UInt64;
+  end;
+  PNote = ^TNote;
+const
+  PPQN = 60;
+var
+  Ver, Division: Word;
+  InitTempo, Tempo: Cardinal;
+  I,J,K: Integer;
+  Notes: TList;
+  NoteDur: PNote;
+begin
+  Log.Lines.Add('[*] Converting Standard MIDI to Extended MIDI...');
+  Application.ProcessMessages;
+  if not SongData_GetDWord('InitTempo', InitTempo) then
+    InitTempo := 500000;
+  Tempo := InitTempo;
+  SongData_GetWord('MIDIType', Ver);
+  SongData_GetWord('Division', Division);
+  if Ver = 1 then
+  begin
+    Log.Lines.Add('[*] Warning: MIDI Type-1 is not supported by XMIDI.');
+    MergeTracksByTicks;
+  end;
+  for I := 0 to Length(TrackData)-1 do
+  begin
+    // Step 1: Flatten frequency at 120 Hz (Tempo 500000 @ 60 PPQN)
+    for J := 0 to Length(TrackData[I].Data) - 1 do
+    begin
+      if TrackData[I].Data[J].Ticks > 0 then
+        TrackData[I].Data[J].Ticks :=
+        Round(TrackData[I].Data[J].Ticks * PPQN * Tempo / (Division * InitTempo));
+      case TrackData[I].Data[J].Status shr 4 of
+        15: begin
+          if TrackData[I].Data[J].Status = $FF then
+            case TrackData[I].Data[J].BParm1 of
+              81: // Tempo
+                Tempo := TrackData[I].Data[J].Value;
+            end;
+        end;
+      end;
+    end;
+    // Step 2: Convert note on/off to durations
+    Notes := TList.Create;
+    J := 0;
+    while J < Length(TrackData[I].Data) do
+    begin
+      if TrackData[I].Data[J].Ticks > 0 then
+        for K := 0 to Notes.Count - 1 do
+        begin
+          NoteDur := Notes[K];
+          NoteDur.Duration := NoteDur.Duration + TrackData[I].Data[J].Ticks;
+        end;
+      case TrackData[I].Data[J].Status shr 4 of
+        8: begin // Note Off
+          K := 0;
+          while K < Notes.Count do
+          begin
+            NoteDur := Notes[K];
+            if (TrackData[I].Data[J].Status and $F = NoteDur.Chan)
+            and (TrackData[I].Data[J].BParm1 = NoteDur.Note) then
+            begin
+              TrackData[I].Data[NoteDur.Index].Len := NoteDur.Duration;
+              Dispose(NoteDur);
+              Notes.Delete(K);
+              Continue;
+            end;
+            Inc(K);
+          end;
+        end;
+        9: begin // Note On
+          New(NoteDur);
+          NoteDur.Chan := TrackData[I].Data[J].Status and $F;
+          NoteDur.Note := TrackData[I].Data[J].BParm1;
+          NoteDur.Index := J;
+          NoteDur.Duration := 0;
+          Notes.Add(NoteDur);
+        end;
+      end;
+      Inc(J);
+    end;
+    // Step 3: Remove note off events
+    J := 0;
+    while J < Length(TrackData[I].Data) do
+    begin
+      if TrackData[I].Data[J].Status shr 4 = 8 then
+      begin
+        DelEvent(I, J, True);
+        // Update indexes
+        for K := 0 to Notes.Count - 1 do
+        begin
+          NoteDur := Notes[K];
+          if NoteDur.Index > J then
+            Dec(NoteDur.Index);
+        end;
+        Continue;
+      end;
+      Inc(J);
+    end;
+    // Step 4: Turn off remaining notes
+    for J := 0 to Notes.Count - 1 do
+    begin
+      NoteDur := Notes[J];
+      TrackData[I].Data[NoteDur.Index].Len := NoteDur.Duration;
+      Dispose(NoteDur);
+    end;
+    Notes.Free;
+    Log.Lines.Add('[+] Track #'+IntToStr(I)+': '+IntToStr(Length(TrackData[I].Data))+' events converted.');
+  end;
+  SongData_PutInt('MIDIType', 2);
+  SongData_PutInt('Division', PPQN);
   Log.Lines.Add('[+] Done.');
 end;
 
@@ -7972,6 +8105,12 @@ begin
     TargetEventFormat := 'mid';
     TargetEventProfile := 'mdi';
   end;
+  if (Ext = '.xmi')
+  then begin
+    TargetContainer := 'xmi';
+    TargetEventFormat := 'xmi';
+    TargetEventProfile := 'xmi';
+  end;
   if (Ext = '.mus')
   then begin
     TargetContainer := 'mus';
@@ -8061,6 +8200,8 @@ begin
   M.Free;
   RefTrackList;
   TrkCh.ItemIndex := Idx;
+  if (TrkCh.Items.Count > 0) and (TrkCh.ItemIndex = -1) then
+    TrkCh.ItemIndex := 0;
   FillEvents(TrkCh.ItemIndex);
   CalculateEvnts;
   ChkButtons;
@@ -8935,6 +9076,20 @@ begin
     then
       FileName := FileName + '.rmi';
   end;
+  if Pos('*.xmi', FilterExt) > 0 then
+  begin
+    if (ExtractFileExt(FileName) = '')
+    or (LowerCase(ExtractFileExt(FileName)) <> '.xmi')
+    then
+      FileName := FileName + '.xmi';
+  end;
+  if Pos('*.cmf', FilterExt) > 0 then
+  begin
+    if (ExtractFileExt(FileName) = '')
+    or (LowerCase(ExtractFileExt(FileName)) <> '.cmf')
+    then
+      FileName := FileName + '.mus';
+  end;
   if Pos('*.mus', FilterExt) > 0 then
   begin
     if (ExtractFileExt(FileName) = '')
@@ -9291,6 +9446,11 @@ end;
 procedure TMainForm.ConvertEvents(DestProfile: AnsiString);
 begin
   if EventProfile = 'mid' then begin
+    if DestProfile = 'xmi' then begin
+      Convert_MID_XMI;
+      EventProfile := 'xmi';
+      EventViewProfile := 'xmi';
+    end;
     if DestProfile = 'mus' then begin
       Convert_MID_MUS;
       EventProfile := 'mus';
@@ -9363,6 +9523,125 @@ begin
       Data[I].Ticks := Data[I].Ticks - TicksPos;
       TicksPos := TicksPos + Data[I].Ticks;
     end;
+end;
+
+procedure TMainForm.MergeTracksByTicks;
+var
+  I: Integer;
+  Track: Chunk;
+  Positions: Array of UInt64;
+  Cmd: Command;
+  function GetTick(Idx: Integer; var Tick: UInt64): Boolean;
+  begin
+    Result := False;
+    if Positions[Idx] >= Length(TrackData[Idx].Data) then
+      Exit;
+    Tick := TrackData[Idx].Data[Positions[Idx]].Ticks;
+    Result := True;
+  end;
+  function GetNextEvent: Boolean;
+  var
+    I, Idx: Integer;
+    MinTick, Tick: UInt64;
+  begin
+    Result := False;
+    Idx := -1;
+    MinTick := High(UInt64);
+    for I := 0 to Length(TrackData) - 1 do
+      if GetTick(I, Tick) then
+        if (Idx = -1) or (Tick < MinTick) then begin
+          MinTick := Tick;
+          Idx := I;
+        end;
+    if Idx = -1 then
+      Exit;
+    Cmd := TrackData[Idx].Data[Positions[Idx]];
+    Inc(Positions[Idx]);
+    Result := True;
+  end;
+begin
+  if Length(TrackData) < 2 then begin
+    Log.Lines.Add('[-] Merge failed. At least two tracks are required.');
+    Exit;
+  end;
+  Log.Lines.Add('[*] Checking empty tracks...');
+  I := 0;
+  while I < Length(TrackData) do begin
+    if Length(TrackData[I].Data) = 0 then
+      DelTrack(I)
+    else
+      Inc(I);
+  end;
+  Log.Lines.Add('[*] Clearing EOT events...');
+  for I := 0 to Length(TrackData) - 1 do
+    if (TrackData[I].Data[Length(TrackData[I].Data) - 1].Status = $FF)
+    and(TrackData[I].Data[Length(TrackData[I].Data) - 1].BParm1 = $2F)
+    then
+      DelEvent(I, Length(TrackData[I].Data) - 1, False);
+  Log.Lines.Add('[*] Merging tracks...');
+  SetLength(Positions, Length(TrackData));
+  for I := 0 to Length(Positions) - 1 do
+    Positions[I] := 0;
+  Track.Title := '';
+  for I := 0 to Length(TrackData) - 1 do
+    ConvertTicks(True, TrackData[I].Data);
+  while GetNextEvent do begin
+    SetLength(Track.Data, Length(Track.Data) + 1);
+    Track.Data[Length(Track.Data) - 1] := Cmd;
+  end;
+  SetLength(Track.Data, Length(Track.Data) + 1);
+  if Length(Track.Data) > 1 then
+    Track.Data[Length(Track.Data) - 1].Ticks := Track.Data[Length(Track.Data) - 2].Ticks
+  else
+    Track.Data[Length(Track.Data) - 1].Ticks := 0;
+  Track.Data[Length(Track.Data) - 1].Status := $FF;
+  Track.Data[Length(Track.Data) - 1].BParm1 := $2F;
+  while Length(TrackData) > 0 do
+    DelTrack(0);
+  AddTrack;
+  TrackData[0] := Track;
+  for I := 0 to Length(TrackData) - 1 do
+    ConvertTicks(False, TrackData[I].Data);
+  Log.Lines.Add('[+] Done.');
+end;
+
+procedure TMainForm.MergeTracksByOrder;
+var
+  I, J: Integer;
+  Ticks: UInt64;
+begin
+  if Length(TrackData) < 2 then begin
+    Log.Lines.Add('[-] Merge failed. At least two tracks are required.');
+    Exit;
+  end;
+  Log.Lines.Add('[*] Checking empty tracks...');
+  I := 0;
+  while I < Length(TrackData) do begin
+    if Length(TrackData[I].Data) = 0 then
+      DelTrack(I)
+    else
+      Inc(I);
+  end;
+  Log.Lines.Add('[*] Clearing EOT events...');
+  for I := 0 to Length(TrackData) - 2 do
+    if (TrackData[I].Data[Length(TrackData[I].Data) - 1].Status = $FF)
+    and(TrackData[I].Data[Length(TrackData[I].Data) - 1].BParm1 = $2F)
+    then begin
+      Ticks := TrackData[I].Data[Length(TrackData[I].Data) - 1].Ticks;
+      TrackData[I + 1].Data[0].Ticks :=
+      TrackData[I + 1].Data[0].Ticks + Ticks;
+      DelEvent(I, Length(TrackData[I].Data) - 1, False);
+    end;
+  Log.Lines.Add('[*] Merging tracks...');
+  while Length(TrackData) > 1 do begin
+    J := Length(TrackData[0].Data);
+    SetLength(TrackData[0].Data,
+    Length(TrackData[0].Data) + Length(TrackData[1].Data));
+    for I := 0 to Length(TrackData[1].Data) - 1 do
+      TrackData[0].Data[J + I] := TrackData[1].Data[I];
+    DelTrack(1);
+  end;
+  Log.Lines.Add('[+] Done.');
 end;
 
 procedure TMainForm.CopyBufRange(Trk, From, Count: Integer);
@@ -10189,88 +10468,13 @@ begin
 end;
 
 procedure TMainForm.MMerge1Click(Sender: TObject);
-var
-  I: Integer;
-  Track: Chunk;
-  Positions: Array of UInt64;
-  Cmd: Command;
-  function GetTick(Idx: Integer; var Tick: UInt64): Boolean;
-  begin
-    Result := False;
-    if Positions[Idx] >= Length(TrackData[Idx].Data) then
-      Exit;
-    Tick := TrackData[Idx].Data[Positions[Idx]].Ticks;
-    Result := True;
-  end;
-  function GetNextEvent: Boolean;
-  var
-    I, Idx: Integer;
-    MinTick, Tick: UInt64;
-  begin
-    Result := False;
-    Idx := -1;
-    MinTick := High(UInt64);
-    for I := 0 to Length(TrackData) - 1 do
-      if GetTick(I, Tick) then
-        if (Idx = -1) or (Tick < MinTick) then begin
-          MinTick := Tick;
-          Idx := I;
-        end;
-    if Idx = -1 then
-      Exit;
-    Cmd := TrackData[Idx].Data[Positions[Idx]];
-    Inc(Positions[Idx]);
-    Result := True;
-  end;
 begin
   if MessageBox(Handle, 'This action will merge all tracks into one '+
   'by delta ticks. It''s useful when you want to convert '+
   'multi-track MIDI-1 format to single multi-channel track MIDI-0. '+
   'Do you wish to continue?', 'Merge tracks by ticks', mb_IconQuestion or mb_YesNo)<>mrYes
   then Exit;
-  if Length(TrackData) < 2 then begin
-    Log.Lines.Add('[-] Merge failed. At least two tracks are required.');
-    Exit;
-  end;
-  Log.Lines.Add('[*] Checking empty tracks...');
-  I := 0;
-  while I < Length(TrackData) do begin
-    if Length(TrackData[I].Data) = 0 then
-      DelTrack(I)
-    else
-      Inc(I);
-  end;
-  Log.Lines.Add('[*] Clearing EOT events...');
-  for I := 0 to Length(TrackData) - 1 do
-    if (TrackData[I].Data[Length(TrackData[I].Data) - 1].Status = $FF)
-    and(TrackData[I].Data[Length(TrackData[I].Data) - 1].BParm1 = $2F)
-    then
-      DelEvent(I, Length(TrackData[I].Data) - 1, False);
-  Log.Lines.Add('[*] Merging tracks...');
-  SetLength(Positions, Length(TrackData));
-  for I := 0 to Length(Positions) - 1 do
-    Positions[I] := 0;
-  Track.Title := '';
-  for I := 0 to Length(TrackData) - 1 do
-    ConvertTicks(True, TrackData[I].Data);
-  while GetNextEvent do begin
-    SetLength(Track.Data, Length(Track.Data) + 1);
-    Track.Data[Length(Track.Data) - 1] := Cmd;
-  end;
-  SetLength(Track.Data, Length(Track.Data) + 1);
-  if Length(Track.Data) > 1 then
-    Track.Data[Length(Track.Data) - 1].Ticks := Track.Data[Length(Track.Data) - 2].Ticks
-  else
-    Track.Data[Length(Track.Data) - 1].Ticks := 0;
-  Track.Data[Length(Track.Data) - 1].Status := $FF;
-  Track.Data[Length(Track.Data) - 1].BParm1 := $2F;
-  while Length(TrackData) > 0 do
-    DelTrack(0);
-  AddTrack;
-  TrackData[0] := Track;
-  for I := 0 to Length(TrackData) - 1 do
-    ConvertTicks(False, TrackData[I].Data);
-  Log.Lines.Add('[+] Done.');
+  MergeTracksByTicks;
   RefTrackList;
   TrkCh.ItemIndex := 0;
   FillEvents(TrkCh.ItemIndex);
@@ -10278,47 +10482,13 @@ begin
 end;
 
 procedure TMainForm.MMerge2Click(Sender: TObject);
-var
-  I, J: Integer;
-  Ticks: UInt64;
 begin
   if MessageBox(Handle, 'This action will merge all tracks into one '+
   'sequently by order. It''s useful when you want to convert '+
   'multi-song MIDI-2 format to single multi-channel track MIDI-0. '+
   'Do you wish to continue?', 'Merge tracks by order', mb_IconQuestion or mb_YesNo)<>mrYes
   then Exit;
-  if Length(TrackData) < 2 then begin
-    Log.Lines.Add('[-] Merge failed. At least two tracks are required.');
-    Exit;
-  end;
-  Log.Lines.Add('[*] Checking empty tracks...');
-  I := 0;
-  while I < Length(TrackData) do begin
-    if Length(TrackData[I].Data) = 0 then
-      DelTrack(I)
-    else
-      Inc(I);
-  end;
-  Log.Lines.Add('[*] Clearing EOT events...');
-  for I := 0 to Length(TrackData) - 2 do
-    if (TrackData[I].Data[Length(TrackData[I].Data) - 1].Status = $FF)
-    and(TrackData[I].Data[Length(TrackData[I].Data) - 1].BParm1 = $2F)
-    then begin
-      Ticks := TrackData[I].Data[Length(TrackData[I].Data) - 1].Ticks;
-      TrackData[I + 1].Data[0].Ticks :=
-      TrackData[I + 1].Data[0].Ticks + Ticks;
-      DelEvent(I, Length(TrackData[I].Data) - 1, False);
-    end;
-  Log.Lines.Add('[*] Merging tracks...');
-  while Length(TrackData) > 1 do begin
-    J := Length(TrackData[0].Data);
-    SetLength(TrackData[0].Data,
-    Length(TrackData[0].Data) + Length(TrackData[1].Data));
-    for I := 0 to Length(TrackData[1].Data) - 1 do
-      TrackData[0].Data[J + I] := TrackData[1].Data[I];
-    DelTrack(1);
-  end;
-  Log.Lines.Add('[+] Done.');
+  MergeTracksByOrder;
   RefTrackList;
   TrkCh.ItemIndex := 0;
   FillEvents(TrkCh.ItemIndex);
