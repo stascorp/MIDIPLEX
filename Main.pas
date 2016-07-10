@@ -440,12 +440,14 @@ type
     procedure MSplit1Click(Sender: TObject);
     procedure FormResize(Sender: TObject);
     procedure MSplit2Click(Sender: TObject);
+    procedure MSplit3Click(Sender: TObject);
     procedure MOptimizeClick(Sender: TObject);
     procedure PCopyClick(Sender: TObject);
     procedure PCutClick(Sender: TObject);
     procedure PPasteClick(Sender: TObject);
     procedure MFindClick(Sender: TObject);
     procedure MFindNextClick(Sender: TObject);
+    procedure MReplaceClick(Sender: TObject);
     procedure Changechannel1Click(Sender: TObject);
     procedure Loopstart1Click(Sender: TObject);
     procedure Loopend1Click(Sender: TObject);
@@ -471,6 +473,7 @@ type
     procedure MProfileXMIClick(Sender: TObject);
     procedure MW32RefreshClick(Sender: TObject);
     procedure MW32MapperClick(Sender: TObject);
+    procedure MOutConfClick(Sender: TObject);
   private
     { Private declarations }
     procedure OnEventChange(var Msg: TMessage); message WM_EVENTIDX;
@@ -8686,6 +8689,11 @@ begin
   Log.Lines.Add('[*] Search complete.');
 end;
 
+procedure TMainForm.MReplaceClick(Sender: TObject);
+begin
+  MessageBox(Handle, 'This feature is not implemented yet.', 'Notice', mb_Ok or mb_IconWarning);
+end;
+
 procedure TMainForm.MFormatMIDClick(Sender: TObject);
 var
   Idx: Integer;
@@ -9740,6 +9748,11 @@ begin
   CalculateEvnts;
 end;
 
+procedure TMainForm.MSplit3Click(Sender: TObject);
+begin
+  MessageBox(Handle, 'This feature is not implemented yet.', 'Notice', mb_Ok or mb_IconWarning);
+end;
+
 procedure TMainForm.ConvertEvents(DestProfile: AnsiString);
 begin
   if EventProfile = 'mid' then begin
@@ -10262,6 +10275,11 @@ begin
   M.Checked := True;
   MSynth.Checked := False;
   MWin32.Checked := True;
+end;
+
+procedure TMainForm.MOutConfClick(Sender: TObject);
+begin
+  MessageBox(Handle, 'This feature is not implemented yet.', 'Notice', mb_Ok or mb_IconWarning);
 end;
 
 procedure TMainForm.Evnt128Click(Sender: TObject);

@@ -645,6 +645,7 @@ object MainForm: TMainForm
         Caption = 'Replace'
         Enabled = False
         ShortCut = 16456
+        OnClick = MReplaceClick
       end
       object Changechannel1: TMenuItem
         Caption = 'Change channel'
@@ -742,6 +743,7 @@ object MainForm: TMainForm
       object MSplit3: TMenuItem
         Caption = 'Split track by note'
         Enabled = False
+        OnClick = MSplit3Click
       end
     end
     object MActions: TMenuItem
@@ -846,6 +848,7 @@ object MainForm: TMainForm
       end
       object MOutConf: TMenuItem
         Caption = 'MIDI Output options'
+        OnClick = MOutConfClick
       end
       object MLoopSong: TMenuItem
         Caption = 'Loop song'
