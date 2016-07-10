@@ -7485,6 +7485,8 @@ end;
 
 procedure TMainForm.OnEventChange(var Msg: TMessage);
 begin
+  if Msg.LParam <> TrkCh.ItemIndex then
+    Exit;
   vEvntIndex := Msg.WParam;
   vTrkIndex := Msg.LParam;
   vChangeEvent := True;
@@ -7509,6 +7511,8 @@ end;
 procedure NtDelayExecution(Alertable:boolean;Interval:PInt64); stdcall; external 'ntdll.dll';
 
 procedure MIDIPlayer; stdcall;
+label
+  stop;
 var
   I, Idx: Integer;
   Buf: Array of Byte;
@@ -7518,8 +7522,10 @@ begin
   Idx := -1;
   I := 0;
   if not SongData_GetWord('MIDIType', Ver) then
-    Exit;
+    goto stop;
   while I < Length(PlayData) do begin
+    if MIDIThrId = 0 then
+      Break;
     if (Ver <> 1) and (Idx <> PlayData[I].PlayerInfo.TrackID) then begin
       Idx := PlayData[I].PlayerInfo.TrackID;
       PostMessage(MainForm.Handle, WM_TRACKIDX, Idx, 0);
@@ -7536,7 +7542,7 @@ begin
       I := LoopPoint;
     if PlayData[I].PlayerInfo.Send then begin
       if midiOutShortMsg(MIDIOut, PlayData[I].PlayerInfo.Cmd) <> MMSYSERR_NOERROR then
-        Exit;
+        Break;
       if PlayData[I].Status shr 4 = 9 then begin
         PostMessage(MainForm.Handle, WM_SETVU, PlayData[I].Status and $F, PlayData[I].BParm2);
       end;
@@ -7560,13 +7566,15 @@ begin
         MIDIData.dwBufferLength := Length(Buf);
         MIDIData.dwBytesRecorded := Length(Buf);
         if midiOutPrepareHeader(MIDIOut, @MIDIData, SizeOf(MIDIData)) <> MMSYSERR_NOERROR then
-          Exit;
+          Break;
         if midiOutLongMsg(MIDIOut, @MIDIData, SizeOf(MIDIData)) <> MMSYSERR_NOERROR then
-          Exit;
+          Break;
       end;
     Inc(I);
   end;
+stop:
   midiOutClose(MIDIOut);
+  MIDIThrId := 0;
 end;
 
 procedure TMainForm.bPlayClick(Sender: TObject);
@@ -7927,7 +7935,7 @@ end;
 
 procedure TMainForm.bStopClick(Sender: TObject);
 begin
-  midiOutClose(MIDIOut);
+  MIDIThrId := 0;
 end;
 
 function TMainForm.LoadFile(FileName, Fmt: String): Boolean;
