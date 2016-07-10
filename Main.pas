@@ -299,6 +299,7 @@ type
     MW32Mapper: TMenuItem;
     N13: TMenuItem;
     MW32Refresh: TMenuItem;
+    MShowVars: TMenuItem;
     procedure BtOpenClick(Sender: TObject);
     procedure FormCreate(Sender: TObject);
     procedure TrkChChange(Sender: TObject);
@@ -433,6 +434,7 @@ type
     procedure BDelEvntRangeTClick(Sender: TObject);
     procedure Other1Click(Sender: TObject);
     procedure MMetaOtherClick(Sender: TObject);
+    procedure MShowVarsClick(Sender: TObject);
     procedure MChangeTypeClick(Sender: TObject);
     procedure MChangeDivisionClick(Sender: TObject);
     procedure MSaveAsClick(Sender: TObject);
@@ -6578,6 +6580,18 @@ begin
     Log.Lines.Add('SMPTE       '+IntToStr(-SMPTE)+' FPS');
   end;
   Log.Lines.Add('');
+end;
+
+procedure TMainForm.MShowVarsClick(Sender: TObject);
+var
+  I: Integer;
+begin
+  Log.Lines.Add('[*] Internal variables:');
+  Log.Lines.Add('Container = ' + Container);
+  Log.Lines.Add('EventFormat = ' + EventFormat);
+  Log.Lines.Add('EventProfile = ' + EventProfile);
+  for I := 1 to SongData.RowCount - 1 do
+    Log.Lines.Add(SongData.Cells[0, I] + ' = ' + SongData.Cells[1, I]);
 end;
 
 procedure TMainForm.MChangeTypeClick(Sender: TObject);

@@ -757,12 +757,8 @@ object MainForm: TMainForm
         Caption = 'Change &division'
         OnClick = MChangeDivisionClick
       end
-      object MCalcLen: TMenuItem
-        Caption = 'Calculate song &length'
-        OnClick = MCalcLenClick
-      end
       object MConvert: TMenuItem
-        Caption = 'Convert events...'
+        Caption = '&Convert events...'
         object MFormatMID: TMenuItem
           Caption = 'Standard MIDI'
           OnClick = MFormatMIDClick
@@ -787,8 +783,16 @@ object MainForm: TMainForm
       object N9: TMenuItem
         Caption = '-'
       end
+      object MShowVars: TMenuItem
+        Caption = 'Show internal &variables'
+        OnClick = MShowVarsClick
+      end
+      object MCalcLen: TMenuItem
+        Caption = 'Calculate song &length'
+        OnClick = MCalcLenClick
+      end
       object MOptimize: TMenuItem
-        Caption = 'Optimize song size'
+        Caption = '&Optimize song size'
         Enabled = False
         OnClick = MOptimizeClick
       end
