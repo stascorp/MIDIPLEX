@@ -4148,6 +4148,7 @@ type
   end;
   PNoteDur = ^NoteDur;
 var
+  InitTempo, Tempo: Cardinal;
   I,J,K: Integer;
   Durations: TList;
   PDur: PNoteDur;
@@ -4156,8 +4157,12 @@ var
 begin
   Log.Lines.Add('[*] Converting Extended MIDI to Standard MIDI...');
   Application.ProcessMessages;
+  if not SongData_GetDWord('InitTempo', InitTempo) then
+    InitTempo := 500000;
+  Tempo := InitTempo;
   for I := 0 to Length(TrackData)-1 do
   begin
+    // Step 1: Convert note events to Note On/Off
     J := 0;
     Durations := TList.Create;
     while J < Length(TrackData[I].Data) do
@@ -4241,16 +4246,6 @@ begin
             TrackData[I].Data[J].Len := 0;
           end;
         end;
-        15: begin
-          if TrackData[I].Data[J].Status = $FF then
-            case TrackData[I].Data[J].BParm1 of
-              81: // Tempo - unused
-              begin
-                DelEvent(I, J, True);
-                Continue;
-              end;
-            end;
-        end;
       end;
       if (Durations.Count > 0)
       and (J = High(TrackData[I].Data))
@@ -4276,6 +4271,16 @@ begin
       Dispose(PDur);
     end;
     Durations.Free;
+    // Step 2: Shape the delay ticks using Tempo events as a reference
+    for J := 0 to Length(TrackData[I].Data) - 1 do
+    begin
+      if TrackData[I].Data[J].Ticks > 0 then
+        TrackData[I].Data[J].Ticks :=
+        Round(TrackData[I].Data[J].Ticks * InitTempo / Tempo);
+      if (TrackData[I].Data[J].Status = $FF)
+      and (TrackData[I].Data[J].BParm1 = 81) then
+        Tempo := TrackData[I].Data[J].Value;
+    end;
     Log.Lines.Add('[+] Track #'+IntToStr(I)+': '+IntToStr(Length(TrackData[I].Data))+' events converted.');
   end;
   Log.Lines.Add('[+] Done.');
@@ -4318,15 +4323,9 @@ begin
       if TrackData[I].Data[J].Ticks > 0 then
         TrackData[I].Data[J].Ticks :=
         Round(TrackData[I].Data[J].Ticks * PPQN * Tempo / (Division * InitTempo));
-      case TrackData[I].Data[J].Status shr 4 of
-        15: begin
-          if TrackData[I].Data[J].Status = $FF then
-            case TrackData[I].Data[J].BParm1 of
-              81: // Tempo
-                Tempo := TrackData[I].Data[J].Value;
-            end;
-        end;
-      end;
+      if (TrackData[I].Data[J].Status = $FF)
+      and (TrackData[I].Data[J].BParm1 = 81) then
+        Tempo := TrackData[I].Data[J].Value;
     end;
     // Step 2: Convert note on/off to durations
     Notes := TList.Create;
