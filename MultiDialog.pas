@@ -154,6 +154,8 @@ type
     NoteDur: TSpinEdit;
     lNoteDur: TLabel;
     lNoteDurRes: TLabel;
+    seVal1: TSpinEdit;
+    seVal2: TSpinEdit;
     procedure FormCreate(Sender: TObject);
     procedure VelocityChange(Sender: TObject);
     procedure ChnChange(Sender: TObject);
@@ -757,6 +759,12 @@ var
 begin
   EVal1.Clear;
   EVal2.Clear;
+  EVal1.Visible := True;
+  EVal2.Visible := True;
+  seVal1.Visible := False;
+  seVal2.Visible := False;
+  StaticText4.Enabled := EType.ItemIndex < 7;
+  FChn.Enabled := EType.ItemIndex < 7;
   Label29.Enabled:=False;
   EVal2.Enabled:=False;
   EVal1Op.Enabled:=False;
@@ -766,7 +774,7 @@ begin
   case EType.ItemIndex of
     0..1,5: begin
       Label29.Enabled:=True;
-      EVal2.Enabled:=True;
+      EVal2.Visible := False;
       EVal1Op.Enabled:=True;
       EVal2Op.Enabled:=True;
       if Chn.ItemIndex<>9 then
@@ -777,22 +785,27 @@ begin
         for I:=0 to 127 do begin
           EVal1.Items.Add(IntToStr(I)+': '+DrumTable[I]);
         end;
-      for I:=0 to 127 do
-        EVal2.Items.Add(IntToStr(I));
+      seVal2.MinValue := 0;
+      seVal2.MaxValue := 127;
       if Chn.ItemIndex<>9 then
         EVal1.ItemIndex:=127-48
       else
         EVal1.ItemIndex:=48;
       if EType.ItemIndex<>1 then
-        EVal2.ItemIndex:=127
+        seVal2.Value := 127
       else
-        EVal2.ItemIndex:=0;
+        seVal2.Value := 0;
+      seVal2.Enabled := True;
+      seVal2.Visible := True;
     end;
     2: begin
-      for I:=0 to 16383 do
-        EVal1.Items.Add(IntToStr(I));
-      EVal1.ItemIndex:=8192;
+      EVal1.Visible := False;
+      seVal1.MinValue := 0;
+      seVal1.MaxValue := 16383;
+      seVal1.Value := 8192;
       EVal1Op.Enabled:=True;
+      seVal1.Enabled := True;
+      seVal1.Visible := True;
     end;
     3: begin
       if Chn.ItemIndex<>9 then
@@ -806,21 +819,26 @@ begin
     end;
     4: begin
       Label29.Enabled:=True;
-      EVal2.Enabled:=True;
-      for I:=0 to 127 do begin
+      EVal2.Visible := False;
+      for I:=0 to 127 do
         EVal1.Items.Add(ControlTable[I]);
-        EVal2.Items.Add(IntToStr(I));
-      end;
       EVal1.ItemIndex:=7;
-      EVal2.ItemIndex:=127;
       EVal1Op.Enabled:=True;
       EVal2Op.Enabled:=True;
+      seVal2.MinValue := 0;
+      seVal2.MaxValue := 127;
+      seVal2.Value := 127;
+      seVal2.Enabled := True;
+      seVal2.Visible := True;
     end;
     6: begin
-      for I:=0 to 127 do
-        EVal1.Items.Add(IntToStr(I));
-      EVal1.ItemIndex:=127;
+      EVal1.Visible := False;
+      seVal1.MinValue := 0;
+      seVal1.MaxValue := 127;
+      seVal1.Value := 127;
       EVal1Op.Enabled:=True;
+      seVal1.Enabled := True;
+      seVal1.Visible := True;
     end;
     7: begin
       Label29.Enabled:=True;
@@ -838,37 +856,46 @@ procedure TEditDialog.EVal1Change(Sender: TObject);
 var
   I: Integer;
 begin
-  if EType.ItemIndex=7 then begin
-    Label29.Enabled:=False;
-    EVal2.Enabled:=False;
-    EVal2Op.Enabled:=False;
-    case EVal1.ItemIndex of
-      1: begin
-        Label29.Enabled:=True;
-        EVal2.Enabled:=True;
-        EVal2Op.Enabled:=True;
-      end;
-      2: begin
-        Label29.Enabled:=True;
-        EVal2.Enabled:=True;
-        EVal2Op.Enabled:=True;
-      end;
-      3: begin
-        Label29.Enabled:=True;
-        EVal2.Enabled:=True;
-        EVal2Op.Enabled:=True;
-      end;
-      15: begin
-        Label29.Enabled:=True;
-        EVal2.Enabled:=True;
-        EVal2.Clear;
-        for I:=0 to 127 do
-          EVal2.Items.Add(IntToStr(I)+': '+MetaTable[I]);
-        EVal2.ItemIndex:=1;
-      end;
+  if EType.ItemIndex <> 7 then
+    Exit;
+  Label29.Enabled:=False;
+  EVal2.Clear;
+  EVal2.Visible := True;
+  EVal2.Enabled:=False;
+  EVal2Op.Enabled:=False;
+  seVal2.Visible := False;
+  Label30.Enabled := False;
+  EText.Enabled := False;
+  case EVal1.ItemIndex of
+    2: begin
+      Label29.Enabled:=True;
+      EVal2.Visible := False;
+      seVal2.MinValue := 0;
+      seVal2.MaxValue := 16383;
+      seVal2.Value := 0;
+      EVal2Op.Enabled:=True;
+      seVal2.Enabled := True;
+      seVal2.Visible := True;
     end;
-    EVal2Change(Sender);
+    3: begin
+      Label29.Enabled:=True;
+      EVal2.Visible := False;
+      seVal2.MinValue := 0;
+      seVal2.MaxValue := 127;
+      seVal2.Value := 0;
+      EVal2Op.Enabled:=True;
+      seVal2.Enabled := True;
+      seVal2.Visible := True;
+    end;
+    15: begin
+      Label29.Enabled:=True;
+      EVal2.Enabled:=True;
+      for I:=0 to 127 do
+        EVal2.Items.Add(IntToStr(I)+': '+MetaTable[I]);
+      EVal2.ItemIndex:=1;
+    end;
   end;
+  EVal2Change(Sender);
 end;
 
 procedure TEditDialog.EVal2Change(Sender: TObject);

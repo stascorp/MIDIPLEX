@@ -45,6 +45,17 @@ type
     Title: AnsiString;
     Data: Array of Command;
   end;
+  TSearchEvent = record
+    dtOp: Byte;
+    dt: UInt64;
+    chan: Byte;
+    evnt: Byte;
+    v1Op: Byte;
+    v1: Word;
+    v2Op: Byte;
+    v2: Word;
+    Text: String;
+  end;
 type
   TMainForm = class(TForm)
     OpenDialog: TOpenDialog;
@@ -434,6 +445,7 @@ type
     procedure PCutClick(Sender: TObject);
     procedure PPasteClick(Sender: TObject);
     procedure MFindClick(Sender: TObject);
+    procedure MFindNextClick(Sender: TObject);
     procedure Changechannel1Click(Sender: TObject);
     procedure Loopstart1Click(Sender: TObject);
     procedure Loopend1Click(Sender: TObject);
@@ -540,8 +552,11 @@ var
   // EventViewProfile = EventProfile
   SongData: TValueListEditor;
   TrackData: Array of Chunk;
+  // Clipboard
   BCopyBuf: Boolean = False;
   DCopyBuf: Array of Command;
+  // Search
+  SearchEv: TSearchEvent;
   // Player
   MIDIDev: DWORD = MIDI_MAPPER;
   MIDIOut: HMIDIOUT;
@@ -6613,8 +6628,8 @@ begin
   MActions.Enabled:=(Length(TrackData)>0);
   MOptimize.Enabled:=(Length(TrackData)>0);
   MFind.Enabled:=(Length(TrackData)>0);
-  MFindNext.Enabled:=(Length(TrackData)>0);
   MReplace.Enabled:=(Length(TrackData)>0);
+  MProfile.Enabled:=(Length(TrackData)>0);
   if Length(TrackData)=0 then begin
     MEditEvnt.Enabled:=False;
     BEditEvnt.Enabled:=False;
@@ -8350,6 +8365,16 @@ begin
   OpenDialog.Filter :=
     StringReplace(OpenDialog.Filter, '||', '|'+AllStr+'|', []);
 
+  SearchEv.dtOp := 0;
+  SearchEv.dt := 0;
+  SearchEv.chan := $FF;
+  SearchEv.evnt := 0;
+  SearchEv.v1Op := 1;
+  SearchEv.v1 := 48;
+  SearchEv.v2Op := 1;
+  SearchEv.v2 := 127;
+  SearchEv.Text := '';
+
   MW32RefreshClick(Sender);
   ChkButtons;
 end;
@@ -8412,8 +8437,253 @@ begin
   EditDialog.DeltaTime.Visible:=False;
   EditDialog.Chn.Visible:=False;
   EditDialog.Caption:='Find event';
-  if not EditDialog.ShowModal=mrOk then Exit;
 
+  EditDialog.EDelta.Value := SearchEv.dt;
+  EditDialog.ETickOp.ItemIndex := SearchEv.dtOp;
+  case SearchEv.evnt of
+    $8: EditDialog.EType.ItemIndex := 1;
+    $9: EditDialog.EType.ItemIndex := 0;
+    $A: EditDialog.EType.ItemIndex := 5;
+    $B: EditDialog.EType.ItemIndex := 4;
+    $C: EditDialog.EType.ItemIndex := 3;
+    $D: EditDialog.EType.ItemIndex := 6;
+    $E: EditDialog.EType.ItemIndex := 2;
+    $F: EditDialog.EType.ItemIndex := 7;
+    else
+       EditDialog.EType.ItemIndex := 0;
+  end;
+  if SearchEv.chan = $FF then
+    EditDialog.FChn.ItemIndex := 0
+  else
+    EditDialog.FChn.ItemIndex := SearchEv.chan + 1;
+  EditDialog.ETypeChange(Sender);
+  EditDialog.EVal1Op.ItemIndex := SearchEv.v1Op;
+  EditDialog.EVal2Op.ItemIndex := SearchEv.v2Op;
+  case SearchEv.evnt of
+    $8, $9, $A:
+    begin
+      if SearchEv.chan = 9 then
+        EditDialog.EVal1.ItemIndex := SearchEv.v1
+      else
+        EditDialog.EVal1.ItemIndex := 127 - SearchEv.v1;
+      EditDialog.seVal2.Value := SearchEv.v2;
+    end;
+    $B:
+    begin
+      EditDialog.EVal1.ItemIndex := SearchEv.v1;
+      EditDialog.seVal2.Value := SearchEv.v2;
+    end;
+    $C:
+      EditDialog.EVal1.ItemIndex := SearchEv.v1;
+    $D, $E:
+      EditDialog.seVal1.Value := SearchEv.v1;
+    $F:
+    begin
+      EditDialog.EVal1.ItemIndex := SearchEv.v1;
+      EditDialog.EVal1Change(Sender);
+      case SearchEv.v1 of
+        2, 3: EditDialog.seVal2.Value := SearchEv.v2;
+        15:
+        begin
+          EditDialog.EVal2.ItemIndex := SearchEv.v2;
+          EditDialog.EVal2Change(Sender);
+        end;
+      end;
+    end;
+  end;
+  EditDialog.EText.Text := SearchEv.Text;
+
+  if EditDialog.ShowModal <> mrOk then
+    Exit;
+
+  SearchEv.dtOp := EditDialog.ETickOp.ItemIndex;
+  SearchEv.dt := EditDialog.EDelta.Value;
+  case EditDialog.EType.ItemIndex of
+    0: SearchEv.evnt := $9;
+    1: SearchEv.evnt := $8;
+    2: SearchEv.evnt := $E;
+    3: SearchEv.evnt := $C;
+    4: SearchEv.evnt := $B;
+    5: SearchEv.evnt := $A;
+    6: SearchEv.evnt := $D;
+    7: SearchEv.evnt := $F;
+  end;
+  if EditDialog.FChn.ItemIndex < 1 then
+    SearchEv.chan := $FF
+  else
+    SearchEv.chan := EditDialog.FChn.ItemIndex - 1;
+  SearchEv.v1Op := EditDialog.EVal1Op.ItemIndex;
+  SearchEv.v2Op := EditDialog.EVal2Op.ItemIndex;
+  case SearchEv.evnt of
+    $8, $9, $A:
+    begin
+      if SearchEv.chan = 9 then
+        SearchEv.v1 := EditDialog.EVal1.ItemIndex
+      else
+        SearchEv.v1 := 127 - EditDialog.EVal1.ItemIndex;
+      SearchEv.v2 := EditDialog.seVal2.Value;
+    end;
+    $B:
+    begin
+      SearchEv.v1 := EditDialog.EVal1.ItemIndex;
+      SearchEv.v2 := EditDialog.seVal2.Value;
+    end;
+    $C:
+      SearchEv.v1 := EditDialog.EVal1.ItemIndex;
+    $D, $E:
+      SearchEv.v1 := EditDialog.seVal1.Value;
+    $F:
+    begin
+      SearchEv.v1 := EditDialog.EVal1.ItemIndex;
+      case SearchEv.v1 of
+        2, 3: SearchEv.v2 := EditDialog.seVal2.Value;
+        15: SearchEv.v2 := EditDialog.EVal2.ItemIndex;
+      end;
+    end;
+  end;
+  SearchEv.Text := EditDialog.EText.Text;
+  MFindNext.Enabled := SearchEv.evnt >= 8;
+  MFindNextClick(Sender);
+end;
+
+procedure TMainForm.MFindNextClick(Sender: TObject);
+var
+  I, J: Integer;
+  Ev: Command;
+  Found: Boolean;
+begin
+  if SearchEv.evnt < 8 then
+    Exit;
+  I := TrkCh.ItemIndex;
+  while I < Length(TrackData) do
+  begin
+    if I = TrkCh.ItemIndex then
+      J := Events.Row // search from next event
+    else
+      J := 0;
+    while J < Length(TrackData[I].Data) do
+    begin
+      Ev := TrackData[I].Data[J];
+      // check event
+      Found := Ev.Status shr 4 = SearchEv.evnt;
+      // check delta time
+      if Found
+      and (SearchEv.dtOp > 0) then
+        case SearchEv.dtOp of
+          1: // equal
+            Found := Ev.Ticks = SearchEv.dt;
+          2: // not equal
+            Found := Ev.Ticks <> SearchEv.dt;
+          3: // greater
+            Found := Ev.Ticks > SearchEv.dt;
+          4: // less
+            Found := Ev.Ticks < SearchEv.dt;
+          5: // greater or equal
+            Found := Ev.Ticks >= SearchEv.dt;
+          6: // less or equal
+            Found := Ev.Ticks <= SearchEv.dt;
+        end;
+      // check channel
+      if Found
+      and (SearchEv.evnt < $F)
+      and (SearchEv.chan <= $F) then
+        Found := Ev.Status and $F = SearchEv.chan;
+      // check values
+      if Found
+      and (SearchEv.evnt in [$8, $9, $A, $B, $C, $D])
+      and (SearchEv.v1Op > 0) then
+        case SearchEv.v1Op of
+          1: // equal
+            Found := Ev.BParm1 = SearchEv.v1;
+          2: // not equal
+            Found := Ev.BParm1 <> SearchEv.v1;
+          3: // greater
+            Found := Ev.BParm1 > SearchEv.v1;
+          4: // less
+            Found := Ev.BParm1 < SearchEv.v1;
+          5: // greater or equal
+            Found := Ev.BParm1 >= SearchEv.v1;
+          6: // less or equal
+            Found := Ev.BParm1 <= SearchEv.v1;
+        end;
+      if Found
+      and (SearchEv.evnt in [$8, $9, $A, $B])
+      and (SearchEv.v2Op > 0) then
+        case SearchEv.v2Op of
+          1: // equal
+            Found := Ev.BParm2 = SearchEv.v2;
+          2: // not equal
+            Found := Ev.BParm2 <> SearchEv.v2;
+          3: // greater
+            Found := Ev.BParm2 > SearchEv.v2;
+          4: // less
+            Found := Ev.BParm2 < SearchEv.v2;
+          5: // greater or equal
+            Found := Ev.BParm2 >= SearchEv.v2;
+          6: // less or equal
+            Found := Ev.BParm2 <= SearchEv.v2;
+        end;
+      if Found
+      and (SearchEv.evnt = $E)
+      and (SearchEv.v1Op > 0) then
+        case SearchEv.v1Op of
+          1: // equal
+            Found := Ev.Value = SearchEv.v1;
+          2: // not equal
+            Found := Ev.Value <> SearchEv.v1;
+          3: // greater
+            Found := Ev.Value > SearchEv.v1;
+          4: // less
+            Found := Ev.Value < SearchEv.v1;
+          5: // greater or equal
+            Found := Ev.Value >= SearchEv.v1;
+          6: // less or equal
+            Found := Ev.Value <= SearchEv.v1;
+        end;
+      if Found
+      and (SearchEv.evnt = $F) then
+      begin
+        Found := Ev.Status and $F = SearchEv.v1;
+        if Found
+        and (SearchEv.v1 in [2, 3])
+        and (SearchEv.v2Op > 0) then
+          case SearchEv.v2Op of
+            1: // equal
+              Found := Ev.BParm1 = SearchEv.v2;
+            2: // not equal
+              Found := Ev.BParm1 <> SearchEv.v2;
+            3: // greater
+              Found := Ev.BParm1 > SearchEv.v2;
+            4: // less
+              Found := Ev.BParm1 < SearchEv.v2;
+            5: // greater or equal
+              Found := Ev.BParm1 >= SearchEv.v2;
+            6: // less or equal
+              Found := Ev.BParm1 <= SearchEv.v2;
+          end;
+        if Found
+        and (SearchEv.v1 = $F) then
+        begin
+          Found := Ev.BParm1 = SearchEv.v2;
+          if Found
+          and (SearchEv.v2 in [1..7])
+          and (SearchEv.Text <> '') then
+            Found := Pos(SearchEv.Text, Ev.DataString) > 0;
+        end;
+      end;
+
+      if Found then
+      begin
+        TrkCh.ItemIndex := I;
+        TrkChChange(Sender);
+        Events.Row := J + 1;
+        Exit;
+      end;
+      Inc(J);
+    end;
+    Inc(I);
+  end;
+  Log.Lines.Add('[*] Search complete.');
 end;
 
 procedure TMainForm.MFormatMIDClick(Sender: TObject);

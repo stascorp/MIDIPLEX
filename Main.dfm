@@ -639,6 +639,7 @@ object MainForm: TMainForm
         Caption = 'Find next'
         Enabled = False
         ShortCut = 114
+        OnClick = MFindNextClick
       end
       object MReplace: TMenuItem
         Caption = 'Replace'
@@ -794,6 +795,7 @@ object MainForm: TMainForm
       Caption = '&Settings'
       object MProfile: TMenuItem
         Caption = 'Event view profile...'
+        Enabled = False
         object MProfileMID: TMenuItem
           Caption = 'Standard MIDI'
           OnClick = MProfileMIDClick

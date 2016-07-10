@@ -21,16 +21,12 @@ object EditDialog: TEditDialog
     Top = -5
     Width = 433
     Height = 273
-    ActivePage = TNote
+    ActivePage = Search
     TabOrder = 2
     TabStop = False
     object Range: TTabSheet
       Tag = 2
       Caption = 'Range'
-      ExplicitLeft = 0
-      ExplicitTop = 0
-      ExplicitWidth = 0
-      ExplicitHeight = 0
       object Label1: TLabel
         Left = 13
         Top = 10
@@ -142,18 +138,10 @@ object EditDialog: TEditDialog
     object Empty: TTabSheet
       Caption = 'Empty'
       ImageIndex = 2
-      ExplicitLeft = 0
-      ExplicitTop = 0
-      ExplicitWidth = 0
-      ExplicitHeight = 0
     end
     object ProgChange: TTabSheet
       Caption = 'ProgChange'
       ImageIndex = 3
-      ExplicitLeft = 0
-      ExplicitTop = 0
-      ExplicitWidth = 0
-      ExplicitHeight = 0
       object Label5: TLabel
         Left = 21
         Top = 38
@@ -173,10 +161,6 @@ object EditDialog: TEditDialog
     object Aftertouch: TTabSheet
       Caption = 'Aftertouch'
       ImageIndex = 4
-      ExplicitLeft = 0
-      ExplicitTop = 0
-      ExplicitWidth = 0
-      ExplicitHeight = 0
       object Label6: TLabel
         Left = 38
         Top = 67
@@ -221,10 +205,6 @@ object EditDialog: TEditDialog
     object Pitch: TTabSheet
       Caption = 'Pitch'
       ImageIndex = 5
-      ExplicitLeft = 0
-      ExplicitTop = 0
-      ExplicitWidth = 0
-      ExplicitHeight = 0
       object Label8: TLabel
         Left = 10
         Top = 38
@@ -254,10 +234,6 @@ object EditDialog: TEditDialog
     object Str: TTabSheet
       Caption = 'Str'
       ImageIndex = 6
-      ExplicitLeft = 0
-      ExplicitTop = 0
-      ExplicitWidth = 0
-      ExplicitHeight = 0
       object Label9: TLabel
         Left = 38
         Top = 38
@@ -284,10 +260,6 @@ object EditDialog: TEditDialog
     object Ctrl: TTabSheet
       Caption = 'Ctrl'
       ImageIndex = 7
-      ExplicitLeft = 0
-      ExplicitTop = 0
-      ExplicitWidth = 0
-      ExplicitHeight = 0
       object Label10: TLabel
         Left = 13
         Top = 38
@@ -326,10 +298,6 @@ object EditDialog: TEditDialog
     object CtrlLevel: TTabSheet
       Caption = 'CtrlLevel'
       ImageIndex = 8
-      ExplicitLeft = 0
-      ExplicitTop = 0
-      ExplicitWidth = 0
-      ExplicitHeight = 0
       object Label12: TLabel
         Left = 35
         Top = 38
@@ -359,10 +327,6 @@ object EditDialog: TEditDialog
     object CtrlVal: TTabSheet
       Caption = 'CtrlVal'
       ImageIndex = 9
-      ExplicitLeft = 0
-      ExplicitTop = 0
-      ExplicitWidth = 0
-      ExplicitHeight = 0
       object Label13: TLabel
         Left = 34
         Top = 38
@@ -384,10 +348,6 @@ object EditDialog: TEditDialog
     object CtrlSwitch: TTabSheet
       Caption = 'CtrlSwitch'
       ImageIndex = 10
-      ExplicitLeft = 0
-      ExplicitTop = 0
-      ExplicitWidth = 0
-      ExplicitHeight = 0
       object Switch: TRadioGroup
         Left = 11
         Top = 33
@@ -404,10 +364,6 @@ object EditDialog: TEditDialog
     object HexEdit: TTabSheet
       Caption = 'HexEdit'
       ImageIndex = 11
-      ExplicitLeft = 0
-      ExplicitTop = 0
-      ExplicitWidth = 0
-      ExplicitHeight = 0
       object Label14: TLabel
         Left = 11
         Top = 38
@@ -503,10 +459,6 @@ object EditDialog: TEditDialog
     object SMPTE: TTabSheet
       Caption = 'SMPTE'
       ImageIndex = 12
-      ExplicitLeft = 0
-      ExplicitTop = 0
-      ExplicitWidth = 0
-      ExplicitHeight = 0
       object Label15: TLabel
         Left = 14
         Top = 38
@@ -596,10 +548,6 @@ object EditDialog: TEditDialog
     object TimeSign: TTabSheet
       Caption = 'TimeSign'
       ImageIndex = 13
-      ExplicitLeft = 0
-      ExplicitTop = 0
-      ExplicitWidth = 0
-      ExplicitHeight = 0
       object Label20: TLabel
         Left = 26
         Top = 38
@@ -681,10 +629,6 @@ object EditDialog: TEditDialog
     object KeySign: TTabSheet
       Caption = 'KeySign'
       ImageIndex = 14
-      ExplicitLeft = 0
-      ExplicitTop = 0
-      ExplicitWidth = 0
-      ExplicitHeight = 0
       object Label24: TLabel
         Left = 34
         Top = 42
@@ -724,10 +668,6 @@ object EditDialog: TEditDialog
     object MIDIType: TTabSheet
       Caption = 'MIDIType'
       ImageIndex = 15
-      ExplicitLeft = 0
-      ExplicitTop = 0
-      ExplicitWidth = 0
-      ExplicitHeight = 0
       object MType: TRadioGroup
         Left = 50
         Top = 5
@@ -743,10 +683,6 @@ object EditDialog: TEditDialog
     object Division: TTabSheet
       Caption = 'Division'
       ImageIndex = 16
-      ExplicitLeft = 0
-      ExplicitTop = 0
-      ExplicitWidth = 0
-      ExplicitHeight = 0
       object Label25: TLabel
         Left = 20
         Top = 10
@@ -797,10 +733,6 @@ object EditDialog: TEditDialog
     object Search: TTabSheet
       Caption = 'Search'
       ImageIndex = 17
-      ExplicitLeft = 0
-      ExplicitTop = 0
-      ExplicitWidth = 0
-      ExplicitHeight = 0
       object Label27: TLabel
         Left = 8
         Top = 38
@@ -829,6 +761,28 @@ object EditDialog: TEditDialog
         Height = 13
         Caption = 'Text:'
       end
+      object seVal2: TSpinEdit
+        Left = 120
+        Top = 89
+        Width = 171
+        Height = 22
+        MaxValue = 0
+        MinValue = 0
+        TabOrder = 11
+        Value = 0
+        Visible = False
+      end
+      object seVal1: TSpinEdit
+        Left = 120
+        Top = 62
+        Width = 171
+        Height = 22
+        MaxValue = 0
+        MinValue = 0
+        TabOrder = 8
+        Value = 0
+        Visible = False
+      end
       object EType: TComboBox
         Left = 71
         Top = 35
@@ -836,7 +790,7 @@ object EditDialog: TEditDialog
         Height = 21
         Style = csDropDownList
         ItemIndex = 0
-        TabOrder = 0
+        TabOrder = 5
         Text = 'Note On'
         OnChange = ETypeChange
         Items.Strings = (
@@ -855,7 +809,7 @@ object EditDialog: TEditDialog
         Width = 171
         Height = 21
         Style = csDropDownList
-        TabOrder = 1
+        TabOrder = 7
         OnChange = EVal1Change
       end
       object EVal2: TComboBox
@@ -864,7 +818,7 @@ object EditDialog: TEditDialog
         Width = 171
         Height = 21
         Style = csDropDownList
-        TabOrder = 2
+        TabOrder = 10
         OnChange = EVal2Change
       end
       object EText: TEdit
@@ -872,7 +826,7 @@ object EditDialog: TEditDialog
         Top = 116
         Width = 220
         Height = 21
-        TabOrder = 3
+        TabOrder = 12
       end
       object EDelta: TSpinEdit
         Left = 120
@@ -882,7 +836,7 @@ object EditDialog: TEditDialog
         Enabled = False
         MaxValue = 2147483647
         MinValue = 0
-        TabOrder = 4
+        TabOrder = 2
         Value = 0
       end
       object ETickOp: TComboBox
@@ -892,7 +846,7 @@ object EditDialog: TEditDialog
         Height = 21
         Style = csDropDownList
         ItemIndex = 0
-        TabOrder = 5
+        TabOrder = 1
         Text = 'any'
         OnChange = ETickOpChange
         Items.Strings = (
@@ -911,7 +865,7 @@ object EditDialog: TEditDialog
         Height = 21
         Style = csDropDownList
         ItemIndex = 0
-        TabOrder = 6
+        TabOrder = 4
         Text = 'any'
         OnChange = FChnChange
         Items.Strings = (
@@ -939,7 +893,7 @@ object EditDialog: TEditDialog
         Width = 57
         Height = 17
         Caption = 'Delta-time:'
-        TabOrder = 7
+        TabOrder = 0
       end
       object StaticText4: TStaticText
         Left = 198
@@ -947,7 +901,7 @@ object EditDialog: TEditDialog
         Width = 47
         Height = 17
         Caption = 'Channel:'
-        TabOrder = 8
+        TabOrder = 3
       end
       object EVal1Op: TComboBox
         Left = 71
@@ -956,7 +910,7 @@ object EditDialog: TEditDialog
         Height = 21
         Style = csDropDownList
         ItemIndex = 1
-        TabOrder = 9
+        TabOrder = 6
         Text = '='
         Items.Strings = (
           'any'
@@ -974,7 +928,7 @@ object EditDialog: TEditDialog
         Height = 21
         Style = csDropDownList
         ItemIndex = 1
-        TabOrder = 10
+        TabOrder = 9
         Text = '='
         Items.Strings = (
           'any'
