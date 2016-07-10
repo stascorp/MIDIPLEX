@@ -4356,12 +4356,32 @@ begin
           end;
         end;
         9: begin // Note On
-          New(NoteDur);
-          NoteDur.Chan := TrackData[I].Data[J].Status and $F;
-          NoteDur.Note := TrackData[I].Data[J].BParm1;
-          NoteDur.Index := J;
-          NoteDur.Duration := 0;
-          Notes.Add(NoteDur);
+          if TrackData[I].Data[J].BParm2 = 0 then
+          begin // Velocity = 0 - this is Note Off
+            K := 0;
+            while K < Notes.Count do
+            begin
+              NoteDur := Notes[K];
+              if (TrackData[I].Data[J].Status and $F = NoteDur.Chan)
+              and (TrackData[I].Data[J].BParm1 = NoteDur.Note) then
+              begin
+                TrackData[I].Data[NoteDur.Index].Len := NoteDur.Duration;
+                Dispose(NoteDur);
+                Notes.Delete(K);
+                Continue;
+              end;
+              Inc(K);
+            end;
+          end
+          else
+          begin
+            New(NoteDur);
+            NoteDur.Chan := TrackData[I].Data[J].Status and $F;
+            NoteDur.Note := TrackData[I].Data[J].BParm1;
+            NoteDur.Index := J;
+            NoteDur.Duration := 0;
+            Notes.Add(NoteDur);
+          end;
         end;
       end;
       Inc(J);
