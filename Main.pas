@@ -4724,7 +4724,7 @@ procedure TMainForm.Convert_MUS_MDI;
 var
   InitTempo: Cardinal;
   I, J, K: Integer;
-  B: Byte;
+  W: Word;
   SName, SData: String;
   SL: TStringList;
   Division: Word;
@@ -4766,11 +4766,12 @@ begin
             for K := 0 to (13+13+2) - 1 do
             begin
               try
-                B := StrToInt(SL[K]);
+                W := StrToInt(SL[K]);
               except
-                B := 0;
+                W := 0;
               end;
-              TrackData[I].Data[J].DataArray[6+K] := B;
+              W := W and $FF;
+              TrackData[I].Data[J].DataArray[6+K] := W;
             end;
             SL.Free;
             TrackData[I].Data[J].Status := $FF; // Meta Event
@@ -5529,7 +5530,10 @@ begin
       SongData_PutStr('SND_Name#'+IntToStr(I), P^.Name);
       Instr := '';
       for J := 0 to (13+13+2) - 1 do
-        Instr := Instr + IntToStr(P^.Data[J]) + ' ';
+        if P^.Data[J] < $80 then
+          Instr := Instr + IntToStr(P^.Data[J]) + ' '
+        else
+          Instr := Instr + IntToStr(P^.Data[J] or $FF00) + ' ';
       SongData_PutStr('SND_Data#'+IntToStr(I), Instr);
       Dispose(P);
     end;
