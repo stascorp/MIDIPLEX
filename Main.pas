@@ -578,6 +578,7 @@ var
   LoopEnabled: Boolean = False;
   LoopPoint, LoopEnd: Integer;
   // Visual
+  vFS: TFormatSettings;
   vChangeEvent: Boolean = False;
   vEvntIndex: Integer;
   vChangeTrack: Boolean = False;
@@ -8786,6 +8787,9 @@ begin
 
   SongData := TValueListEditor.Create(nil);
 
+  FillChar(vFS, SizeOf(vFS), 0);
+  vFS.DecimalSeparator := '.';
+
   Filter := TStringList.Create;
   Filter.Delimiter := '|';
   Filter.StrictDelimiter := True;
@@ -9566,9 +9570,7 @@ begin
               begin
                 Events.Cells[3,I+1] := 'System: Set Tempo';
                 Fl := PSingle(@TrackData[Idx].Data[I].DataArray[1])^;
-                Events.Cells[4,I+1] := 'Value = ' +
-                IntToStr(Round(Fl)) + '.' +
-                Format('%.2d', [Round(Fl * 100) mod 100]);
+                Events.Cells[4,I+1] := 'Value = ' + FormatFloat('0.00#', Fl, vFS);
               end;
               1: // Timbre
               begin
@@ -9580,17 +9582,13 @@ begin
               begin
                 Events.Cells[3,I+1] := 'System: Set Volume';
                 Fl := PSingle(@TrackData[Idx].Data[I].DataArray[1])^;
-                Events.Cells[4,I+1] := 'Value = ' +
-                IntToStr(Round(Fl)) + '.' +
-                Format('%.2d', [Round(Fl * 100) mod 100]);
+                Events.Cells[4,I+1] := 'Value = ' + FormatFloat('0.00#', Fl, vFS);
               end;
               3: // Pitch
               begin
                 Events.Cells[3,I+1] := 'System: Set Pitch';
                 Fl := PSingle(@TrackData[Idx].Data[I].DataArray[1])^;
-                Events.Cells[4,I+1] := 'Value = ' +
-                IntToStr(Round(Fl)) + '.' +
-                Format('%.2d', [Round(Fl * 100) mod 100]);
+                Events.Cells[4,I+1] := 'Value = ' + FormatFloat('0.00#', Fl, vFS);
               end;
             end;
         end;
@@ -9659,9 +9657,7 @@ begin
             Speed :=
             (TrackData[Idx].Data[I].DataArray[3] / 128) +
             TrackData[Idx].Data[I].DataArray[2];
-            Events.Cells[4,I+1] := 'Value = ' +
-            IntToStr(Round(Speed)) + '.' +
-            Format('%.2d', [Round(Speed * 100) mod 100]);
+            Events.Cells[4,I+1] := 'Value = ' + FormatFloat('0.00#', Speed, vFS);
           end;
           if (TrackData[Idx].Data[I].Status = $FC)
           then begin
