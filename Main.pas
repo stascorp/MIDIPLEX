@@ -491,12 +491,14 @@ type
     function DetectMIDS(var F: TMemoryStream): Boolean;
     function DetectXMI(var F: TMemoryStream): Boolean;
     function DetectCMF(var F: TMemoryStream): Boolean;
+    function DetectROL(var F: TMemoryStream): Boolean;
     function DetectMUS(var F: TMemoryStream): Boolean;
     function ReadMIDI(var F: TMemoryStream): Boolean;
     function ReadRMI(var F: TMemoryStream): Boolean;
     function ReadMIDS(var F: TMemoryStream): Boolean;
     function ReadXMI(var F: TMemoryStream): Boolean;
     function ReadCMF(var F: TMemoryStream): Boolean;
+    function ReadROL(var F: TMemoryStream): Boolean;
     function ReadMUS(var F: TMemoryStream; FileName: String): Boolean;
     function ReadRaw(var F: TMemoryStream): Boolean;
     function ReadSYX(var F: TMemoryStream): Boolean;
@@ -605,6 +607,18 @@ begin
   SongData.InsertRow(Name, IntToStr(Val), True);
 end;
 
+procedure SongData_PutFloat(Name: String; Val: Single);
+var
+  Row: Integer;
+begin
+  if SongData.FindRow(Name, Row) then
+  begin
+    SongData.Cells[1, Row] := FloatToStr(Val);
+    Exit;
+  end;
+  SongData.InsertRow(Name, FloatToStr(Val), True);
+end;
+
 procedure SongData_PutStr(Name, Val: String);
 var
   Row: Integer;
@@ -670,6 +684,21 @@ begin
     Exit;
   Val(SongData.Cells[1, Row], DW, Code);
   Result := Code = 0;
+end;
+
+function SongData_GetFloat(Name: String; var Fl: Single): Boolean;
+var
+  Row: Integer;
+begin
+  Result := False;
+  if not SongData.FindRow(Name, Row) then
+    Exit;
+  try
+    Fl := StrToFloat(SongData.Cells[1, Row]);
+    Result := True;
+  except
+
+  end;
 end;
 
 function SongData_GetStr(Name: String; var S: String): Boolean;
@@ -949,6 +978,27 @@ begin
   F.Seek(0, soFromBeginning);
   F.ReadBuffer(Head, 4);
   Result := Head = 'CTMF';
+end;
+
+function TMainForm.DetectROL(var F: TMemoryStream): Boolean;
+var
+  W: Word;
+  Meta: Array[0..39] of Byte;
+begin
+  Result := False;
+  if F.Size < $B6 then
+    Exit;
+  F.Seek(0, soFromBeginning);
+  F.ReadBuffer(W, 2);
+  if W <> 0 then
+    Exit;
+  F.ReadBuffer(W, 2);
+  if W <> 4 then
+    Exit;
+  F.ReadBuffer(Meta, SizeOf(Meta));
+  if PAnsiChar(@Meta[0]) <> '\roll\default' then
+    Exit;
+  Result := True;
 end;
 
 function TMainForm.DetectMUS(var F: TMemoryStream): Boolean;
@@ -1648,6 +1698,189 @@ begin
   end;
   M.Free;
   Result := True;
+end;
+
+function TMainForm.ReadROL(var F: TMemoryStream): Boolean;
+var
+  W, W2: Word;
+  Meta: Array[0..40-1] of Byte;
+  B: Byte;
+  I, J: Integer;
+  Name: Array[0..15-1] of Byte;
+  Inst: Array[0..9 + 1 + 2 - 1] of Byte;
+  Fl: Single;
+  Tk: Word;
+begin
+  Result := False;
+  Log.Lines.Add('[*] Reading AdLib ROL file...');
+  if F.Size < $B6 then begin
+    Log.Lines.Add('[-] Error: Wrong file size.');
+    Exit;
+  end;
+
+  F.Seek(0, soFromBeginning);
+  F.ReadBuffer(W, 2);
+  if W <> 0 then begin
+    Log.Lines.Add('[-] Error: Wrong file version.');
+    Exit;
+  end;
+  F.ReadBuffer(W2, 2);
+  if W2 <> 4 then begin
+    Log.Lines.Add('[-] Error: Wrong file version.');
+    Exit;
+  end;
+  SongData_PutInt('ROL_vMajor', W);
+  SongData_PutInt('ROL_vMinor', W2);
+  F.ReadBuffer(Meta, SizeOf(Meta));
+  if PAnsiChar(@Meta[0]) <> '\roll\default' then
+  begin
+    Log.Lines.Add('[-] Error: Wrong file header.');
+    Exit;
+  end;
+  SongData_PutStr('ROL_Signature', PAnsiChar(@Meta[0]));
+  F.ReadBuffer(W, 2);
+  SongData_PutInt('ROL_TicksPerBeat', W);
+  SongData_PutInt('InitTempo', 60000000 div W);
+  F.ReadBuffer(W, 2);
+  SongData_PutInt('ROL_BeatPerMeasure', W);
+  F.ReadBuffer(W, 2);
+  SongData_PutInt('ROL_ScaleY', W);
+  F.ReadBuffer(W, 2);
+  SongData_PutInt('ROL_ScaleX', W);
+  F.ReadBuffer(B, 1);
+  SongData_PutInt('ROL_PitchBendRange', B);
+  F.ReadBuffer(B, 1);
+  SongData_PutInt('ROL_Melodic', B);
+  F.Seek(90, soCurrent); // skip temp values
+  F.Seek(38, soCurrent); // skip padding
+  if F.Position < F.Size then
+  begin
+    // add tracks
+    I := 0;
+    F.ReadBuffer(Name, SizeOf(Name));
+    SetLength(TrackData, I + 1);
+    TrackData[I].Title := PAnsiChar(@Name[0]);
+    F.ReadBuffer(Fl, 4);
+    SongData_PutFloat('ROL_BasicTempo', Fl);
+    SongData_PutInt('Division', Round(Fl));
+    F.ReadBuffer(W, 2);
+    SetLength(TrackData[I].Data, W);
+    for J := 0 to Length(TrackData[I].Data) - 1 do
+    begin
+      F.ReadBuffer(W, 2);
+      F.ReadBuffer(Fl, 4);
+      TrackData[I].Data[J].Ticks := W;
+      TrackData[I].Data[J].Status := $FF;
+      TrackData[I].Data[J].BParm1 := $7F;
+      SetLength(TrackData[I].Data[J].DataArray, 1 + 4);
+      TrackData[I].Data[J].Len := Length(TrackData[I].Data[J].DataArray);
+      TrackData[I].Data[J].DataArray[0] := 0;
+      Move(Fl, TrackData[I].Data[J].DataArray[1], 4);
+    end;
+    // Convert ticks from absolute to relative
+    ConvertTicks(False, TrackData[I].Data);
+
+    while F.Position < F.Size do
+    begin
+      Inc(I);
+      F.ReadBuffer(Name, SizeOf(Name));
+      SetLength(TrackData, I + 1);
+      TrackData[I].Title := PAnsiChar(@Name[0]);
+      if (I - 1) mod 4 = 0 then
+      begin // Voix #
+        F.ReadBuffer(Tk, 2);
+        J := 0;
+        while Tk > 0 do
+        begin
+          SetLength(TrackData[I].Data, J + 1);
+          F.ReadBuffer(W, 2);
+          TrackData[I].Data[J].Status := $90;
+          if W > 0 then
+            TrackData[I].Data[J].BParm2 := $7F
+          else
+            TrackData[I].Data[J].BParm2 := $00;
+          TrackData[I].Data[J].Status :=
+          TrackData[I].Data[J].Status or (((I - 1) div 4) and $F);
+          TrackData[I].Data[J].BParm1 := W;
+          F.ReadBuffer(W, 2);
+          TrackData[I].Data[J].Len := W;
+          Dec(Tk, W);
+          Inc(J);
+        end;
+        if Length(TrackData[I].Data) > 0 then
+        begin
+          SetLength(TrackData[I].Data, J + 1);
+          TrackData[I].Data[J].Status := $90 or (((I - 1) div 4) and $F);
+          TrackData[I].Data[J].BParm1 := 0;
+          TrackData[I].Data[J].BParm2 := 0;
+          for J := 0 to Length(TrackData[I].Data) - 2 do
+          begin
+            TrackData[I].Data[J + 1].Ticks := TrackData[I].Data[J].Len;
+            TrackData[I].Data[J].Len := 0;
+          end;
+          while TrackData[I].Data[0].BParm1 = 0 do
+            DelEvent(I, 0, True);
+        end;
+      end
+      else
+      begin
+        F.ReadBuffer(W, 2);
+        SetLength(TrackData[I].Data, W);
+        for J := 0 to Length(TrackData[I].Data) - 1 do
+          case (I - 1) mod 4 of
+            1: // Timbre #
+            begin
+              F.ReadBuffer(W, 2);
+              TrackData[I].Data[J].Ticks := W;
+              TrackData[I].Data[J].Status := $FF;
+              TrackData[I].Data[J].BParm1 := $7F;
+              F.ReadBuffer(Inst, SizeOf(Inst));
+              SetLength(TrackData[I].Data[J].DataArray, 1 + SizeOf(Inst));
+              TrackData[I].Data[J].Len := Length(TrackData[I].Data[J].DataArray);
+              TrackData[I].Data[J].DataArray[0] := 1;
+              Move(Inst, TrackData[I].Data[J].DataArray[1], SizeOf(Inst));
+            end;
+            2: // Volume #
+            begin
+              F.ReadBuffer(W, 2);
+              TrackData[I].Data[J].Ticks := W;
+              TrackData[I].Data[J].Status := $FF;
+              TrackData[I].Data[J].BParm1 := $7F;
+              SetLength(TrackData[I].Data[J].DataArray, 1 + 4);
+              TrackData[I].Data[J].Len := Length(TrackData[I].Data[J].DataArray);
+              F.ReadBuffer(Fl, 4);
+              TrackData[I].Data[J].DataArray[0] := 2;
+              Move(Fl, TrackData[I].Data[J].DataArray[1], 4);
+            end;
+            3: // Pitch #
+            begin
+              F.ReadBuffer(W, 2);
+              TrackData[I].Data[J].Ticks := W;
+              TrackData[I].Data[J].Status := $FF;
+              TrackData[I].Data[J].BParm1 := $7F;
+              SetLength(TrackData[I].Data[J].DataArray, 1 + 4);
+              TrackData[I].Data[J].Len := Length(TrackData[I].Data[J].DataArray);
+              F.ReadBuffer(Fl, 4);
+              TrackData[I].Data[J].DataArray[0] := 3;
+              Move(Fl, TrackData[I].Data[J].DataArray[1], 4);
+            end;
+          end;
+        // Convert ticks from absolute to relative
+        ConvertTicks(False, TrackData[I].Data);
+      end;
+      if I >= 11 * 4 then
+        Break;
+    end;
+  end;
+  SongData_PutInt('MIDIType', 1);
+  Result := True;
+  Log.Lines.Add('');
+  Log.Lines.Add('[*] Information:');
+  LogSongInfo;
+  Progress.Position := 0;
+  Log.Lines.Add('');
+  RefTrackList;
+  CalculateEvnts;
 end;
 
 function TMainForm.ReadMUS(var F: TMemoryStream; FileName: String): Boolean;
@@ -7626,6 +7859,16 @@ var
               end;
             end;
           end;
+          if EventProfile = 'rol' then begin
+            if (PlayData[I].Status = $FF)
+            and (PlayData[I].BParm1 = $7F)
+            and (PlayData[I].Len = 5)
+            and (PlayData[I].DataArray[0] = 0) then begin
+              // Set Tempo
+              Tempo := Round(InitTempo / PSingle(@PlayData[I].DataArray[1])^);
+              MSPT := Round(Tempo / Division);
+            end;
+          end;
           if EventProfile = 'mus' then begin
             if (PlayData[I].Status = $F0)
             and (PlayData[I].Len = 5)
@@ -7753,6 +7996,16 @@ var
               end;
             end;
           end;
+          if EventProfile = 'rol' then begin
+            if (PlayData[I].Status = $FF)
+            and (PlayData[I].BParm1 = $7F)
+            and (PlayData[I].Len = 5)
+            and (PlayData[I].DataArray[0] = 0) then begin
+              // Set Tempo
+              Tempo := Round(InitTempo / PSingle(@PlayData[I].DataArray[1])^);
+              MSPT := Round(Tempo / Division);
+            end;
+          end;
           if EventProfile = 'mus' then begin
             if (PlayData[I].Status = $F0)
             and (PlayData[I].Len = 5)
@@ -7842,6 +8095,16 @@ var
                     end;
                   end;
                 end;
+              end;
+            end;
+            if EventProfile = 'rol' then begin
+              if (PlayData[Idx].Status = $FF)
+              and (PlayData[Idx].BParm1 = $7F)
+              and (PlayData[Idx].Len = 5)
+              and (PlayData[Idx].DataArray[0] = 0) then begin
+                // Set Tempo
+                Tempo := Round(InitTempo / PSingle(@PlayData[Idx].DataArray[1])^);
+                MSPT := Round(Tempo / Division);
               end;
             end;
             if EventProfile = 'mus' then begin
@@ -7955,6 +8218,11 @@ begin
       EventFormat := 'mid';
       EventProfile := 'cmf';
     end;
+    if (Ext = '.rol') then begin
+      Container := 'rol';
+      EventFormat := 'rol';
+      EventProfile := 'rol';
+    end;
     if (Ext = '.mus') then begin
       Container := 'mus';
       EventFormat := 'mus';
@@ -8001,6 +8269,11 @@ begin
       Container := 'smf';
       EventFormat := 'mid';
       EventProfile := 'mdi';
+    end;
+    if Fmt = 'rol' then begin
+      Container := 'rol';
+      EventFormat := 'rol';
+      EventProfile := 'rol';
     end;
     if Fmt = 'mus' then begin
       Container := 'mus';
@@ -8052,6 +8325,9 @@ begin
     end;
     if Container = 'cmf' then begin
       Opened := ReadCMF(M);
+    end;
+    if Container = 'rol' then begin
+      Opened := ReadROL(M);
     end;
     if Container = 'mus' then begin
       Opened := ReadMUS(M, FileName);
@@ -8245,6 +8521,13 @@ begin
     EventProfile := 'cmf';
     Exit;
   end;
+  if DetectROL(F) then
+  begin
+    Result := 'rol';
+    EventFormat := 'rol';
+    EventProfile := 'rol';
+    Exit;
+  end;
   if DetectMUS(F) then
   begin
     Result := 'mus';
@@ -8282,6 +8565,8 @@ begin
       Fmt := 'xmi';
     if Pos('*.cmf', FilterExt) > 0 then
       Fmt := 'cmf';
+    if Pos('*.rol', FilterExt) > 0 then
+      Fmt := 'rol';
     if Pos('*.mus', FilterExt) > 0 then
       Fmt := 'mus';
     if Pos('*.mdi', FilterExt) > 0 then
@@ -8719,6 +9004,7 @@ var
   I,J: Integer;
   S: String;
   Speed: Double;
+  Fl: Single;
   Rhythm: Boolean;
   InitTempo: Cardinal;
 begin
@@ -8754,6 +9040,9 @@ begin
   end;
 
   Rhythm := False;
+  if EventViewProfile = 'rol' then
+    if SongData_GetInt('ROL_Melodic', I) then
+      Rhythm := I = 0;
   if EventViewProfile = 'mus' then
     if SongData_GetInt('MUS_Percussive', I) then
       Rhythm := I > 0;
@@ -9040,6 +9329,68 @@ begin
               81: // Tempo
                 Events.Cells[4,I+1] := Events.Cells[4,I+1] + ' (ignored)';
             end;
+      end;
+    end;
+
+    if EventViewProfile = 'rol' then begin
+      case TrackData[Idx].Data[I].Status shr 4 of
+        9: // Note
+        begin
+          Events.Cells[4,I+1]:='Note = '+IntToStr(TrackData[Idx].Data[I].BParm1)+
+          ' ('+NoteNum(TrackData[Idx].Data[I].BParm1)+')';
+          S := '';
+          if Rhythm then
+            case TrackData[Idx].Data[I].Status and 15 of
+              6: S := 'Bass drum';
+              7: S := 'Snare drum';
+              8: S := 'Tom tom';
+              9: S := 'Top cymbal';
+              10: S := 'Hi-hat cymbal';
+            end;
+          if S <> '' then
+            Events.Cells[4,I+1] := Events.Cells[4,I+1] + ' (' + S + ')';
+          if TrackData[Idx].Data[I].BParm1 = 0 then
+            Events.Cells[4,I+1] := '';
+        end;
+        15: // System
+        begin
+          if (TrackData[Idx].Data[I].Status = $FF)
+          and (TrackData[Idx].Data[I].BParm1 = $7F)
+          and (TrackData[Idx].Data[I].Len > 1)
+          then
+            case TrackData[Idx].Data[I].DataArray[0] of
+              0: // Tempo
+              begin
+                Events.Cells[3,I+1] := 'System: Set Tempo';
+                Fl := PSingle(@TrackData[Idx].Data[I].DataArray[1])^;
+                Events.Cells[4,I+1] := 'Value = ' +
+                IntToStr(Round(Fl)) + '.' +
+                Format('%.2d', [Round(Fl * 100) mod 100]);
+              end;
+              1: // Timbre
+              begin
+                Events.Cells[3,I+1] := 'System: Set Timbre';
+                Events.Cells[4,I+1] := 'Name = ' +
+                PAnsiChar(@TrackData[Idx].Data[I].DataArray[1]);
+              end;
+              2: // Volume
+              begin
+                Events.Cells[3,I+1] := 'System: Set Volume';
+                Fl := PSingle(@TrackData[Idx].Data[I].DataArray[1])^;
+                Events.Cells[4,I+1] := 'Value = ' +
+                IntToStr(Round(Fl)) + '.' +
+                Format('%.2d', [Round(Fl * 100) mod 100]);
+              end;
+              3: // Pitch
+              begin
+                Events.Cells[3,I+1] := 'System: Set Pitch';
+                Fl := PSingle(@TrackData[Idx].Data[I].DataArray[1])^;
+                Events.Cells[4,I+1] := 'Value = ' +
+                IntToStr(Round(Fl)) + '.' +
+                Format('%.2d', [Round(Fl * 100) mod 100]);
+              end;
+            end;
+        end;
       end;
     end;
 

@@ -563,9 +563,9 @@ object MainForm: TMainForm
       'All supported MIDI formats||Standard MIDI (*.mid;*.midi;*.kar)|*' +
       '.mid;*.midi;*.kar|RIFF MIDI (*.rmi;*.rmid;*.orc)|*.rmi;*.rmid;*.' +
       'orc|MIDI Stream (*.mds;*.mids)|*.mds;*.mids|Miles Extended MIDI ' +
-      '(*.xmi)|*.xmi|Creative Music File (*.cmf)|*.cmf|AdLib MUS (*.mus' +
-      ')|*.mus|AdLib MDI (*.mdi)|*.mdi|Raw MIDI data (Standard)|*.raw|S' +
-      'ystem Exclusive data|*.syx'
+      '(*.xmi)|*.xmi|Creative Music File (*.cmf)|*.cmf|AdLib ROL (*.rol' +
+      ')|*.rol|AdLib MUS (*.mus)|*.mus|AdLib MDI (*.mdi)|*.mdi|Raw MIDI' +
+      ' data (Standard)|*.raw|System Exclusive data|*.syx'
     Title = 'Open MIDI File'
     Left = 256
     Top = 40

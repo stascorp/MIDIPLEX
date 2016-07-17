@@ -1,3 +1,5 @@
 1. Split track by note
 2. Replace events
-3. Support for ROL, V2M, MUS/DMX (also investigate: HMP, HMI, Cryo HERAD, Midi-Editor MIA, MusyX SON)
+3. Write ROL
+4. Convert MUS to ROL
+5. Support for V2M, MUS/DMX (also investigate: HMP, HMI, Cryo HERAD, Midi-Editor MIA, MusyX SON, Star 3 MIDI ST3)
