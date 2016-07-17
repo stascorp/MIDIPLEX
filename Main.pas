@@ -4561,6 +4561,72 @@ begin
     end;
 end;
 
+procedure ROL_MIDIDrum(var C: Command);
+var
+  B: Byte;
+begin
+  // convert AdLib ROL drums to MIDI
+  case C.Status and 15 of
+    6: // ch06 - Bass Drum
+    begin
+      C.Status := (C.Status and $F0) or 9;
+      if C.BParm1 <= 36 then
+        B := 35
+      else
+        B := 36;
+      C.BParm1 := B;
+    end;
+    7: // ch07 - Snare Drum
+    begin
+      C.Status := (C.Status and $F0) or 9;
+      if C.BParm1 <= 40 then
+        B := 38
+      else
+        B := 40;
+      C.BParm1 := B;
+    end;
+    8: // ch08 - Tom
+    begin
+      C.Status := (C.Status and $F0) or 9;
+      B := 45;
+      if C.BParm1 < 39 then
+        B := 41;
+      if C.BParm1 = 39 then
+        B := 43;
+      if C.BParm1 = 40 then
+        B := 45;
+      if C.BParm1 = 41 then
+        B := 47;
+      if C.BParm1 = 42 then
+        B := 48;
+      if C.BParm1 > 42 then
+        B := 50;
+      C.BParm1 := B;
+    end;
+    9: // ch09 - Cymbal
+    begin
+      B := 57;
+      if C.BParm1 <= 50 then
+        B := 49;
+      if (C.BParm1 > 50)
+      and (C.BParm1 <= 65) then
+        B := 57;
+      if C.BParm1 > 65 then
+        B := 55;
+      C.BParm1 := B;
+    end;
+    10: // ch10 - Hi-Hat
+    begin
+      C.Status := (C.Status and $F0) or 9;
+      if C.BParm1 <= 44 then
+        B := 42
+      else
+        B := 44;
+      C.BParm1 := B;
+    end;
+  end;
+end;
+
 procedure TMainForm.Convert_XMI_MID;
 type
   NoteDur = packed record
@@ -4879,132 +4945,12 @@ begin
         8: // Note Off
         begin
           if Rhythm then
-          begin
-            // convert drums
-            case TrackData[I].Data[J].Status and 15 of
-              6: // ch06 - Bass Drum
-              begin
-                TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 9;
-                if TrackData[I].Data[J].BParm1 <= 36 then
-                  B := 35
-                else
-                  B := 36;
-                TrackData[I].Data[J].BParm1 := B;
-              end;
-              7: // ch07 - Snare Drum
-              begin
-                TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 9;
-                if TrackData[I].Data[J].BParm1 <= 40 then
-                  B := 38
-                else
-                  B := 40;
-                TrackData[I].Data[J].BParm1 := B;
-              end;
-              8: // ch08 - Tom
-              begin
-                TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 9;
-                B := 45;
-                if TrackData[I].Data[J].BParm1 < 39 then
-                  B := 41;
-                if TrackData[I].Data[J].BParm1 = 39 then
-                  B := 43;
-                if TrackData[I].Data[J].BParm1 = 40 then
-                  B := 45;
-                if TrackData[I].Data[J].BParm1 = 41 then
-                  B := 47;
-                if TrackData[I].Data[J].BParm1 = 42 then
-                  B := 48;
-                if TrackData[I].Data[J].BParm1 > 42 then
-                  B := 50;
-                TrackData[I].Data[J].BParm1 := B;
-              end;
-              9: // ch09 - Cymbal
-              begin
-                B := 57;
-                if TrackData[I].Data[J].BParm1 <= 50 then
-                  B := 49;
-                if (TrackData[I].Data[J].BParm1 > 50) and
-                (TrackData[I].Data[J].BParm1 <= 65) then
-                  B := 57;
-                if TrackData[I].Data[J].BParm1 > 65 then
-                  B := 55;
-                TrackData[I].Data[J].BParm1 := B;
-              end;
-              10: // ch10 - Hi-Hat
-              begin
-                TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 9;
-                if TrackData[I].Data[J].BParm1 <= 44 then
-                  B := 42
-                else
-                  B := 44;
-                TrackData[I].Data[J].BParm1 := B;
-              end;
-            end;
-          end;
+            ROL_MIDIDrum(TrackData[I].Data[J]);
         end;
         9: // Note On
         begin
           if Rhythm then
-          begin
-            // convert drums
-            case TrackData[I].Data[J].Status and 15 of
-              6:
-              begin
-                TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 9;
-                if TrackData[I].Data[J].BParm1 <= 36 then
-                  B := 35
-                else
-                  B := 36;
-                TrackData[I].Data[J].BParm1 := B;
-              end;
-              7:
-              begin
-                TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 9;
-                if TrackData[I].Data[J].BParm1 <= 40 then
-                  B := 38
-                else
-                  B := 40;
-                TrackData[I].Data[J].BParm1 := B;
-              end;
-              8:
-              begin
-                TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 9;
-                if TrackData[I].Data[J].BParm1 < 39 then
-                  B := 41;
-                if TrackData[I].Data[J].BParm1 = 39 then
-                  B := 43;
-                if TrackData[I].Data[J].BParm1 = 40 then
-                  B := 45;
-                if TrackData[I].Data[J].BParm1 = 41 then
-                  B := 47;
-                if TrackData[I].Data[J].BParm1 = 42 then
-                  B := 48;
-                if TrackData[I].Data[J].BParm1 > 42 then
-                  B := 50;
-                TrackData[I].Data[J].BParm1 := B;
-              end;
-              9:
-              begin
-                if TrackData[I].Data[J].BParm1 <= 50 then
-                  B := 49;
-                if (TrackData[I].Data[J].BParm1 > 50) and
-                (TrackData[I].Data[J].BParm1 <= 65) then
-                  B := 57;
-                if TrackData[I].Data[J].BParm1 > 65 then
-                  B := 55;
-                TrackData[I].Data[J].BParm1 := B;
-              end;
-              10:
-              begin
-                TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 9;
-                if TrackData[I].Data[J].BParm1 <= 44 then
-                  B := 42
-                else
-                  B := 44;
-                TrackData[I].Data[J].BParm1 := B;
-              end;
-            end;
-          end;
+            ROL_MIDIDrum(TrackData[I].Data[J]);
         end;
         10: // Poly Aftertouch -> Volume Change
         begin
@@ -5278,7 +5224,6 @@ var
   Insts: TList;
   P: PInst;
   I,J,K,Idx: Integer;
-  Val: Byte;
   Rhythm: Boolean;
 begin
   Rhythm := False;
@@ -5325,68 +5270,7 @@ begin
           end;
 
           if Rhythm and (TrackData[I].Data[J].Status shr 4 <> $B) then
-          begin
-            // convert drums
-            case TrackData[I].Data[J].Status and 15 of
-              6: // ch06 - Bass Drum
-              begin
-                TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 9;
-                if TrackData[I].Data[J].BParm1 <= 36 then
-                  Val := 35
-                else
-                  Val := 36;
-                TrackData[I].Data[J].BParm1 := Val;
-              end;
-              7: // ch07 - Snare Drum
-              begin
-                TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 9;
-                if TrackData[I].Data[J].BParm1 <= 40 then
-                  Val := 38
-                else
-                  Val := 40;
-                TrackData[I].Data[J].BParm1 := Val;
-              end;
-              8: // ch08 - Tom
-              begin
-                TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 9;
-                Val := 45;
-                if TrackData[I].Data[J].BParm1 < 39 then
-                  Val := 41;
-                if TrackData[I].Data[J].BParm1 = 39 then
-                  Val := 43;
-                if TrackData[I].Data[J].BParm1 = 40 then
-                  Val := 45;
-                if TrackData[I].Data[J].BParm1 = 41 then
-                  Val := 47;
-                if TrackData[I].Data[J].BParm1 = 42 then
-                  Val := 48;
-                if TrackData[I].Data[J].BParm1 > 42 then
-                  Val := 50;
-                TrackData[I].Data[J].BParm1 := Val;
-              end;
-              9: // ch09 - Cymbal
-              begin
-                Val := 57;
-                if TrackData[I].Data[J].BParm1 <= 50 then
-                  Val := 49;
-                if (TrackData[I].Data[J].BParm1 > 50) and
-                (TrackData[I].Data[J].BParm1 <= 65) then
-                  Val := 57;
-                if TrackData[I].Data[J].BParm1 > 65 then
-                  Val := 55;
-                TrackData[I].Data[J].BParm1 := Val;
-              end;
-              10: // ch10 - Hi-Hat
-              begin
-                TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 9;
-                if TrackData[I].Data[J].BParm1 <= 44 then
-                  Val := 42
-                else
-                  Val := 44;
-                TrackData[I].Data[J].BParm1 := Val;
-              end;
-            end;
-          end;
+            ROL_MIDIDrum(TrackData[I].Data[J]);
           Inc(J);
         end;
         9: // Note On
@@ -5397,68 +5281,7 @@ begin
             Notes[TrackData[I].Data[J].Status and $F] := -1;
 
           if Rhythm then
-          begin
-            // convert drums
-            case TrackData[I].Data[J].Status and 15 of
-              6:
-              begin
-                TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 9;
-                if TrackData[I].Data[J].BParm1 <= 36 then
-                  Val := 35
-                else
-                  Val := 36;
-                TrackData[I].Data[J].BParm1 := Val;
-              end;
-              7:
-              begin
-                TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 9;
-                if TrackData[I].Data[J].BParm1 <= 40 then
-                  Val := 38
-                else
-                  Val := 40;
-                TrackData[I].Data[J].BParm1 := Val;
-              end;
-              8:
-              begin
-                TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 9;
-                Val := 45;
-                if TrackData[I].Data[J].BParm1 < 39 then
-                  Val := 41;
-                if TrackData[I].Data[J].BParm1 = 39 then
-                  Val := 43;
-                if TrackData[I].Data[J].BParm1 = 40 then
-                  Val := 45;
-                if TrackData[I].Data[J].BParm1 = 41 then
-                  Val := 47;
-                if TrackData[I].Data[J].BParm1 = 42 then
-                  Val := 48;
-                if TrackData[I].Data[J].BParm1 > 42 then
-                  Val := 50;
-                TrackData[I].Data[J].BParm1 := Val;
-              end;
-              9:
-              begin
-                Val := 57;
-                if TrackData[I].Data[J].BParm1 <= 50 then
-                  Val := 49;
-                if (TrackData[I].Data[J].BParm1 > 50) and
-                (TrackData[I].Data[J].BParm1 <= 65) then
-                  Val := 57;
-                if TrackData[I].Data[J].BParm1 > 65 then
-                  Val := 55;
-                TrackData[I].Data[J].BParm1 := Val;
-              end;
-              10:
-              begin
-                TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 9;
-                if TrackData[I].Data[J].BParm1 <= 44 then
-                  Val := 42
-                else
-                  Val := 44;
-                TrackData[I].Data[J].BParm1 := Val;
-              end;
-            end;
-          end;
+            ROL_MIDIDrum(TrackData[I].Data[J]);
           Inc(J);
         end;
         10..12,14: Inc(J);
@@ -6713,72 +6536,6 @@ var
   Tracks: Array of Integer;
   Cmd: Command;
   Division: Word;
-
-  procedure MakeDrum(var C: Command);
-  var
-    B: Byte;
-  begin
-    // convert drums
-    case C.Status and 15 of
-      6: // ch06 - Bass Drum
-      begin
-        C.Status := (C.Status and $F0) or 9;
-        if C.BParm1 <= 36 then
-          B := 35
-        else
-          B := 36;
-        C.BParm1 := B;
-      end;
-      7: // ch07 - Snare Drum
-      begin
-        C.Status := (C.Status and $F0) or 9;
-        if C.BParm1 <= 40 then
-          B := 38
-        else
-          B := 40;
-        C.BParm1 := B;
-      end;
-      8: // ch08 - Tom
-      begin
-        C.Status := (C.Status and $F0) or 9;
-        B := 45;
-        if C.BParm1 < 39 then
-          B := 41;
-        if C.BParm1 = 39 then
-          B := 43;
-        if C.BParm1 = 40 then
-          B := 45;
-        if C.BParm1 = 41 then
-          B := 47;
-        if C.BParm1 = 42 then
-          B := 48;
-        if C.BParm1 > 42 then
-          B := 50;
-        C.BParm1 := B;
-      end;
-      9: // ch09 - Cymbal
-      begin
-        B := 57;
-        if C.BParm1 <= 50 then
-          B := 49;
-        if (C.BParm1 > 50)
-        and (C.BParm1 <= 65) then
-          B := 57;
-        if C.BParm1 > 65 then
-          B := 55;
-        C.BParm1 := B;
-      end;
-      10: // ch10 - Hi-Hat
-      begin
-        C.Status := (C.Status and $F0) or 9;
-        if C.BParm1 <= 44 then
-          B := 42
-        else
-          B := 44;
-        C.BParm1 := B;
-      end;
-    end;
-  end;
 begin
   Log.Lines.Add('[*] Converting AdLib ROL to Standard MIDI...');
   if not SongData_GetInt('ROL_Melodic', I) then
@@ -6846,14 +6603,14 @@ begin
                 TrackData[I].Data[J].BParm1 := LastNote;
                 TrackData[I].Data[J].BParm2 := 0;
                 if Rhythm then
-                  MakeDrum(TrackData[I].Data[J]);
+                  ROL_MIDIDrum(TrackData[I].Data[J]);
                 Inc(J);
                 TrackData[I].Data[J].Ticks := 0;
               end;
               LastNote := TrackData[I].Data[J].BParm1;
             end;
             if Rhythm then
-              MakeDrum(TrackData[I].Data[J]);
+              ROL_MIDIDrum(TrackData[I].Data[J]);
           end;
           1: // Timbre #
           if (TrackData[I].Data[J].Status = $FF)
