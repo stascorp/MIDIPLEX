@@ -535,6 +535,7 @@ type
     procedure Convert_CMF_MDI;
     procedure Convert_MDI_CMF;
     procedure ConvertTicks(RelToAbs: Boolean; var Data: Array of Command);
+    function MergeTracksUsingTicks(Tracks: Array of Integer; EOT: Boolean): Chunk;
     procedure MergeTracksByTicks;
     procedure MergeTracksByOrder;
     procedure CalculateEvnts;
@@ -10347,20 +10348,21 @@ begin
     end;
 end;
 
-procedure TMainForm.MergeTracksByTicks;
+function TMainForm.MergeTracksUsingTicks(Tracks: Array of Integer; EOT: Boolean): Chunk;
 var
   I: Integer;
-  Track: Chunk;
   Positions: Array of UInt64;
   Cmd: Command;
+
   function GetTick(Idx: Integer; var Tick: UInt64): Boolean;
   begin
     Result := False;
-    if Positions[Idx] >= Length(TrackData[Idx].Data) then
+    if Positions[Idx] >= Length(TrackData[Tracks[Idx]].Data) then
       Exit;
-    Tick := TrackData[Idx].Data[Positions[Idx]].Ticks;
+    Tick := TrackData[Tracks[Idx]].Data[Positions[Idx]].Ticks;
     Result := True;
   end;
+
   function GetNextEvent: Boolean;
   var
     I, Idx: Integer;
@@ -10369,7 +10371,7 @@ var
     Result := False;
     Idx := -1;
     MinTick := High(UInt64);
-    for I := 0 to Length(TrackData) - 1 do
+    for I := 0 to Length(Tracks) - 1 do
       if GetTick(I, Tick) then
         if (Idx = -1) or (Tick < MinTick) then begin
           MinTick := Tick;
@@ -10377,10 +10379,42 @@ var
         end;
     if Idx = -1 then
       Exit;
-    Cmd := TrackData[Idx].Data[Positions[Idx]];
+    Cmd := TrackData[Tracks[Idx]].Data[Positions[Idx]];
     Inc(Positions[Idx]);
     Result := True;
   end;
+begin
+  SetLength(Positions, Length(Tracks));
+  for I := 0 to Length(Positions) - 1 do
+    Positions[I] := 0;
+  Result.Title := '';
+  SetLength(Result.Data, 0);
+  for I := 0 to Length(Tracks) - 1 do
+    ConvertTicks(True, TrackData[Tracks[I]].Data);
+  while GetNextEvent do begin
+    SetLength(Result.Data, Length(Result.Data) + 1);
+    Result.Data[High(Result.Data)] := Cmd;
+  end;
+  if EOT then
+  begin
+    SetLength(Result.Data, Length(Result.Data) + 1);
+    if Length(Result.Data) > 1 then
+      Result.Data[High(Result.Data)].Ticks := Result.Data[High(Result.Data) - 1].Ticks
+    else
+      Result.Data[High(Result.Data)].Ticks := 0;
+    Result.Data[High(Result.Data)].Status := $FF;
+    Result.Data[High(Result.Data)].BParm1 := $2F;
+  end;
+  for I := 0 to Length(Tracks) - 1 do
+    ConvertTicks(False, TrackData[Tracks[I]].Data);
+  ConvertTicks(False, Result.Data);
+end;
+
+procedure TMainForm.MergeTracksByTicks;
+var
+  I: Integer;
+  Track: Chunk;
+  Tracks: Array of Integer;
 begin
   if Length(TrackData) < 2 then begin
     Log.Lines.Add('[-] Merge failed. At least two tracks are required.');
@@ -10396,34 +10430,19 @@ begin
   end;
   Log.Lines.Add('[*] Clearing EOT events...');
   for I := 0 to Length(TrackData) - 1 do
-    if (TrackData[I].Data[Length(TrackData[I].Data) - 1].Status = $FF)
-    and(TrackData[I].Data[Length(TrackData[I].Data) - 1].BParm1 = $2F)
+    if (TrackData[I].Data[High(TrackData[I].Data)].Status = $FF)
+    and(TrackData[I].Data[High(TrackData[I].Data)].BParm1 = $2F)
     then
-      DelEvent(I, Length(TrackData[I].Data) - 1, False);
+      DelEvent(I, High(TrackData[I].Data), False);
   Log.Lines.Add('[*] Merging tracks...');
-  SetLength(Positions, Length(TrackData));
-  for I := 0 to Length(Positions) - 1 do
-    Positions[I] := 0;
-  Track.Title := '';
-  for I := 0 to Length(TrackData) - 1 do
-    ConvertTicks(True, TrackData[I].Data);
-  while GetNextEvent do begin
-    SetLength(Track.Data, Length(Track.Data) + 1);
-    Track.Data[Length(Track.Data) - 1] := Cmd;
-  end;
-  SetLength(Track.Data, Length(Track.Data) + 1);
-  if Length(Track.Data) > 1 then
-    Track.Data[Length(Track.Data) - 1].Ticks := Track.Data[Length(Track.Data) - 2].Ticks
-  else
-    Track.Data[Length(Track.Data) - 1].Ticks := 0;
-  Track.Data[Length(Track.Data) - 1].Status := $FF;
-  Track.Data[Length(Track.Data) - 1].BParm1 := $2F;
+  SetLength(Tracks, Length(TrackData));
+  for I := 0 to Length(Tracks) - 1 do
+    Tracks[I] := I;
+  Track := MergeTracksUsingTicks(Tracks, True);
   while Length(TrackData) > 0 do
     DelTrack(0);
   AddTrack;
   TrackData[0] := Track;
-  for I := 0 to Length(TrackData) - 1 do
-    ConvertTicks(False, TrackData[I].Data);
   Log.Lines.Add('[+] Done.');
 end;
 
