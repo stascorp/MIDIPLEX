@@ -515,6 +515,7 @@ type
     procedure WriteRMI(var F: TMemoryStream);
     procedure WriteXMI(var F: TMemoryStream);
     procedure WriteCMF(var F: TMemoryStream);
+    procedure WriteROL(var F: TMemoryStream);
     procedure WriteMUS(var F: TMemoryStream; FileName: String);
     procedure WriteRaw(var F: TMemoryStream);
     procedure WriteSYX(var F: TMemoryStream);
@@ -3885,6 +3886,173 @@ begin
     F.WriteBuffer(iChannelInUse, 16);
   end;
   Progress.Position := 0;
+  F.Seek(0, soFromEnd);
+end;
+
+procedure TMainForm.WriteROL(var F: TMemoryStream);
+var
+  I, J: Integer;
+  S: String;
+  Meta: Array[0..40-1] of Byte;
+  W: Word;
+  B: Byte;
+  Vars: Array[0..45-1] of Word;
+  Pad: Array[0..38-1] of Byte;
+  Name: Array[0..15-1] of Byte;
+  Fl: Single;
+  Inst: Array[0..9 + 1 + 2 - 1] of Byte;
+begin
+  Log.Lines.Add('[*] Writing AdLib ROL file...');
+  if not SongData_GetInt('ROL_Version', I) then
+    I := $40000;
+  F.WriteBuffer(I, 4);
+  if not SongData_GetStr('ROL_Signature', S) then
+    S := '\roll\default';
+  if Length(S) > SizeOf(Meta) - 1 then
+    SetLength(S, SizeOf(Meta) - 1);
+  FillChar(Meta, SizeOf(Meta), 0);
+  Move(AnsiString(S)[1], Meta, Length(S));
+  F.WriteBuffer(Meta, SizeOf(Meta));
+  if not SongData_GetWord('ROL_TicksPerBeat', W) then
+    W := 4;
+  F.WriteBuffer(W, 2);
+  if not SongData_GetWord('ROL_BeatPerMeasure', W) then
+    W := 4;
+  F.WriteBuffer(W, 2);
+  if not SongData_GetWord('ROL_ScaleY', W) then
+    W := 48;
+  F.WriteBuffer(W, 2);
+  if not SongData_GetWord('ROL_ScaleX', W) then
+    W := 56;
+  F.WriteBuffer(W, 2);
+  if not SongData_GetByte('ROL_PitchBendRange', B) then
+    B := 0;
+  F.WriteBuffer(B, 1);
+  if not SongData_GetByte('ROL_Melodic', B) then
+    B := 0;
+  F.WriteBuffer(B, 1);
+  FillChar(Vars, SizeOf(Vars), 0);
+  F.WriteBuffer(Vars, SizeOf(Vars));
+  FillChar(Pad, SizeOf(Pad), 0);
+  F.WriteBuffer(Pad, SizeOf(Pad));
+  for I := 0 to Length(TrackData) - 1 do
+  begin
+    S := TrackData[I].Title;
+    if Length(S) > SizeOf(Name) - 1 then
+      SetLength(S, SizeOf(Name) - 1);
+    FillChar(Name, SizeOf(Name), 0);
+    Move(AnsiString(S)[1], Name, Length(S));
+    F.WriteBuffer(Name, SizeOf(Name));
+    if I = 0 then
+    begin // Write Tempo track
+      if not SongData_GetFloat('ROL_BasicTempo', Fl) then
+        if not SongData_GetFloat('Division', Fl) then
+          Fl := 120;
+      F.WriteBuffer(Fl, 4);
+      if Length(TrackData[I].Data) > $FFFF then
+        SetLength(TrackData[I].Data, $FFFF);
+      W := Length(TrackData[I].Data);
+      Vars[44] := W;
+      F.WriteBuffer(W, 2);
+      // Convert ticks from relative to absolute
+      ConvertTicks(True, TrackData[I].Data);
+      for J := 0 to Length(TrackData[I].Data) - 1 do
+      begin
+        if TrackData[I].Data[J].Ticks > $FFFF then
+          TrackData[I].Data[J].Ticks := $FFFF;
+        W := TrackData[I].Data[J].Ticks;
+        F.WriteBuffer(W, 2);
+        if Length(TrackData[I].Data[J].DataArray) < 1 + 4 then
+        begin
+          SetLength(TrackData[I].Data[J].DataArray, 1 + 4);
+          TrackData[I].Data[J].Len := Length(TrackData[I].Data[J].DataArray);
+        end;
+        Move(TrackData[I].Data[J].DataArray[1], Fl, 4);
+        F.WriteBuffer(Fl, 4);
+      end;
+      // Revert
+      ConvertTicks(False, TrackData[I].Data);
+    end
+    else
+      if (I - 1) mod 4 = 0 then
+      begin // Write Voix # track
+        W := 0;
+        for J := 0 to Length(TrackData[I].Data) - 1 do
+          W := Min($FFFF, W + TrackData[I].Data[J].Ticks);
+        Vars[(I - 1) div 4] := W;
+        F.WriteBuffer(W, 2);
+        if W >= 2 then
+        begin
+          if (TrackData[I].Data[0].Ticks > 0)
+          and (TrackData[I].Data[0].BParm1 > 0) then
+          begin
+            W := 0;
+            F.WriteBuffer(W, 2);
+            if TrackData[I].Data[0].Ticks > $FFFF then
+              TrackData[I].Data[0].Ticks := $FFFF;
+            W := TrackData[I].Data[0].Ticks;
+            F.WriteBuffer(W, 2);
+          end;
+          for J := 0 to Length(TrackData[I].Data) - 2 do
+          begin
+            W := TrackData[I].Data[J].BParm1;
+            F.WriteBuffer(W, 2);
+            if TrackData[I].Data[J + 1].Ticks > $FFFF then
+              TrackData[I].Data[J + 1].Ticks := $FFFF;
+            W := TrackData[I].Data[J + 1].Ticks;
+            F.WriteBuffer(W, 2);
+          end;
+        end;
+      end
+      else
+      begin
+        if Length(TrackData[I].Data) > $FFFF then
+          SetLength(TrackData[I].Data, $FFFF);
+        W := Length(TrackData[I].Data);
+        if 11 * ((I - 1) mod 4) + ((I - 1) div 4) < Length(Vars) then
+          Vars[11 * ((I - 1) mod 4) + ((I - 1) div 4)] := W;
+        F.WriteBuffer(W, 2);
+        // Convert ticks from relative to absolute
+        ConvertTicks(True, TrackData[I].Data);
+        for J := 0 to Length(TrackData[I].Data) - 1 do
+          case (I - 1) mod 4 of
+            1: // Timbre #
+            begin
+              if TrackData[I].Data[J].Ticks > $FFFF then
+                TrackData[I].Data[J].Ticks := $FFFF;
+              W := TrackData[I].Data[J].Ticks;
+              F.WriteBuffer(W, 2);
+              if Length(TrackData[I].Data[J].DataArray) < 1 + SizeOf(Inst) then
+              begin
+                SetLength(TrackData[I].Data[J].DataArray, 1 + SizeOf(Inst));
+                TrackData[I].Data[J].Len := Length(TrackData[I].Data[J].DataArray);
+              end;
+              Move(TrackData[I].Data[J].DataArray[1], Inst, SizeOf(Inst));
+              F.WriteBuffer(Inst, SizeOf(Inst));
+            end;
+            2, 3: // Volume #, Pitch #
+            begin
+              if TrackData[I].Data[J].Ticks > $FFFF then
+                TrackData[I].Data[J].Ticks := $FFFF;
+              W := TrackData[I].Data[J].Ticks;
+              F.WriteBuffer(W, 2);
+              if Length(TrackData[I].Data[J].DataArray) < 1 + 4 then
+              begin
+                SetLength(TrackData[I].Data[J].DataArray, 1 + 4);
+                TrackData[I].Data[J].Len := Length(TrackData[I].Data[J].DataArray);
+              end;
+              Move(TrackData[I].Data[J].DataArray[1], Fl, 4);
+              F.WriteBuffer(Fl, 4);
+            end;
+          end;
+        // Revert
+        ConvertTicks(False, TrackData[I].Data);
+      end;
+    if I >= 11 * 4 then
+      Break;
+  end;
+  F.Seek($36, soFromBeginning);
+  F.WriteBuffer(Vars, SizeOf(Vars));
   F.Seek(0, soFromEnd);
 end;
 
@@ -8397,6 +8565,12 @@ begin
     TargetEventFormat := 'xmi';
     TargetEventProfile := 'xmi';
   end;
+  if (Ext = '.rol')
+  then begin
+    TargetContainer := 'rol';
+    TargetEventFormat := 'rol';
+    TargetEventProfile := 'rol';
+  end;
   if (Ext = '.mus')
   then begin
     TargetContainer := 'mus';
@@ -8453,6 +8627,12 @@ begin
     if TargetEventProfile = 'cmf' then
       ConvertEvents('cmf');
     WriteCMF(M);
+    Result := True;
+  end;
+  if TargetContainer = 'rol' then begin
+    if TargetEventProfile = 'rol' then
+      ConvertEvents('rol');
+    WriteROL(M);
     Result := True;
   end;
   if TargetContainer = 'mus' then begin
@@ -9723,6 +9903,13 @@ begin
     or (LowerCase(ExtractFileExt(FileName)) <> '.cmf')
     then
       FileName := FileName + '.mus';
+  end;
+  if Pos('*.rol', FilterExt) > 0 then
+  begin
+    if (ExtractFileExt(FileName) = '')
+    or (LowerCase(ExtractFileExt(FileName)) <> '.rol')
+    then
+      FileName := FileName + '.rol';
   end;
   if Pos('*.mus', FilterExt) > 0 then
   begin
