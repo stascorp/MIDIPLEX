@@ -6594,8 +6594,7 @@ begin
             end
             else
             begin
-              if (LastNote > 0)
-              and (LastNote <> TrackData[I].Data[J].BParm1) then
+              if LastNote > 0 then
               begin
                 NewEvent(I, J, $90, 0);
                 TrackData[I].Data[J].Ticks := TrackData[I].Data[J + 1].Ticks;
@@ -6646,6 +6645,8 @@ begin
             Move(TrackData[I].Data[J].DataArray[1], Fl, 4);
             TrackData[I].Data[J].Status := $E0 or (((I - 1) div 4) and $F);
             TrackData[I].Data[J].Value := Floor(8192 * Fl);
+            TrackData[I].Data[J].BParm1 := TrackData[I].Data[J].Value and 127;
+            TrackData[I].Data[J].BParm2 := (TrackData[I].Data[J].Value shr 7) and 127;
             SetLength(TrackData[I].Data[J].DataArray, 0);
             TrackData[I].Data[J].Len := 0;
           end;
