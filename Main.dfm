@@ -767,6 +767,10 @@ object MainForm: TMainForm
           Caption = 'Extended MIDI'
           OnClick = MFormatXMIClick
         end
+        object MFormatROL: TMenuItem
+          Caption = 'AdLib ROL'
+          OnClick = MFormatROLClick
+        end
         object MFormatMUS: TMenuItem
           Caption = 'AdLib MUS'
           OnClick = MFormatMUSClick
@@ -809,6 +813,10 @@ object MainForm: TMainForm
         object MProfileXMI: TMenuItem
           Caption = 'Extended MIDI'
           OnClick = MProfileXMIClick
+        end
+        object MProfileROL: TMenuItem
+          Caption = 'AdLib ROL'
+          OnClick = MProfileROLClick
         end
         object MProfileMUS: TMenuItem
           Caption = 'AdLib MUS'

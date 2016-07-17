@@ -300,6 +300,8 @@ type
     N13: TMenuItem;
     MW32Refresh: TMenuItem;
     MShowVars: TMenuItem;
+    MProfileROL: TMenuItem;
+    MFormatROL: TMenuItem;
     procedure BtOpenClick(Sender: TObject);
     procedure FormCreate(Sender: TObject);
     procedure TrkChChange(Sender: TObject);
@@ -459,10 +461,12 @@ type
     procedure MFormatMIDClick(Sender: TObject);
     procedure MFormatMDIClick(Sender: TObject);
     procedure MFormatCMFClick(Sender: TObject);
+    procedure MFormatROLClick(Sender: TObject);
     procedure MFormatMUSClick(Sender: TObject);
     procedure MProfileMIDClick(Sender: TObject);
     procedure MProfileMDIClick(Sender: TObject);
     procedure MProfileCMFClick(Sender: TObject);
+    procedure MProfileROLClick(Sender: TObject);
     procedure MProfileMUSClick(Sender: TObject);
     procedure PCopyTextClick(Sender: TObject);
     procedure bPlayClick(Sender: TObject);
@@ -1702,7 +1706,7 @@ end;
 
 function TMainForm.ReadROL(var F: TMemoryStream): Boolean;
 var
-  W, W2: Word;
+  W: Word;
   Meta: Array[0..40-1] of Byte;
   B: Byte;
   I, J: Integer;
@@ -1719,18 +1723,12 @@ begin
   end;
 
   F.Seek(0, soFromBeginning);
-  F.ReadBuffer(W, 2);
-  if W <> 0 then begin
+  F.ReadBuffer(I, 4);
+  if I <> $40000 then begin
     Log.Lines.Add('[-] Error: Wrong file version.');
     Exit;
   end;
-  F.ReadBuffer(W2, 2);
-  if W2 <> 4 then begin
-    Log.Lines.Add('[-] Error: Wrong file version.');
-    Exit;
-  end;
-  SongData_PutInt('ROL_vMajor', W);
-  SongData_PutInt('ROL_vMinor', W2);
+  SongData_PutInt('ROL_Version', I);
   F.ReadBuffer(Meta, SizeOf(Meta));
   if PAnsiChar(@Meta[0]) <> '\roll\default' then
   begin
@@ -6888,21 +6886,25 @@ begin
   end;
   MFormatMID.Enabled := True;
   MFormatXMI.Enabled := True;
+  MFormatROL.Enabled := True;
   MFormatMUS.Enabled := True;
   MFormatMDI.Enabled := True;
   MFormatCMF.Enabled := True;
   MFormatMID.Checked := False;
   MFormatXMI.Checked := False;
+  MFormatROL.Checked := False;
   MFormatMUS.Checked := False;
   MFormatMDI.Checked := False;
   MFormatCMF.Checked := False;
   MProfileMID.Enabled := True;
   MProfileXMI.Enabled := True;
+  MProfileROL.Enabled := True;
   MProfileMUS.Enabled := True;
   MProfileMDI.Enabled := True;
   MProfileCMF.Enabled := True;
   MProfileMID.Checked := False;
   MProfileXMI.Checked := False;
+  MProfileROL.Checked := False;
   MProfileMUS.Checked := False;
   MProfileMDI.Checked := False;
   MProfileCMF.Checked := False;
@@ -6921,6 +6923,14 @@ begin
   if EventViewProfile = 'xmi' then begin
     MProfileXMI.Checked := True;
     MProfileXMI.Enabled := False;
+  end;
+  if EventProfile = 'rol' then begin
+    MFormatROL.Checked := True;
+    MFormatROL.Enabled := False;
+  end;
+  if EventViewProfile = 'rol' then begin
+    MProfileROL.Checked := True;
+    MProfileROL.Enabled := False;
   end;
   if EventProfile = 'mus' then begin
     MFormatMUS.Checked := True;
@@ -8986,6 +8996,19 @@ begin
   ChkButtons;
 end;
 
+procedure TMainForm.MFormatROLClick(Sender: TObject);
+var
+  Idx: Integer;
+begin
+  Idx := TrkCh.ItemIndex;
+  ConvertEvents('rol');
+  RefTrackList;
+  TrkCh.ItemIndex := Idx;
+  FillEvents(TrkCh.ItemIndex);
+  CalculateEvnts;
+  ChkButtons;
+end;
+
 procedure TMainForm.MFormatMUSClick(Sender: TObject);
 var
   Idx: Integer;
@@ -10465,6 +10488,14 @@ end;
 procedure TMainForm.MProfileCMFClick(Sender: TObject);
 begin
   EventViewProfile := 'cmf';
+  FillEvents(TrkCh.ItemIndex);
+  CalculateEvnts;
+  ChkButtons;
+end;
+
+procedure TMainForm.MProfileROLClick(Sender: TObject);
+begin
+  EventViewProfile := 'rol';
   FillEvents(TrkCh.ItemIndex);
   CalculateEvnts;
   ChkButtons;
