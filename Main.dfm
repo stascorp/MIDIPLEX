@@ -795,6 +795,10 @@ object MainForm: TMainForm
         Caption = 'Calculate song &length'
         OnClick = MCalcLenClick
       end
+      object MStats: TMenuItem
+        Caption = 'Calculate song &statistics'
+        OnClick = MStatsClick
+      end
       object MOptimize: TMenuItem
         Caption = '&Optimize song size'
         Enabled = False

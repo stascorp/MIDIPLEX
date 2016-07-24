@@ -5,7 +5,7 @@ interface
 uses
   Windows, Messages, SysUtils, Variants, Classes, Graphics, Controls, Forms,
   Dialogs, ExtCtrls, ComCtrls, StdCtrls, MIDIConsts, Grids, Math, Menus, Buttons,
-  ActnList, MultiDialog, ClipBrd, MMSystem, ValEdit, IFFTrees;
+  ActnList, MultiDialog, ClipBrd, MMSystem, ValEdit, IFFTrees, Generics.Collections;
 
 const
   WM_EVENTIDX = WM_USER + 110;
@@ -56,6 +56,10 @@ type
     v2: Word;
     Text: String;
   end;
+  TTicksDict = TDictionary<UInt64, Cardinal>;
+  TTicksPair = TPair<UInt64, Cardinal>;
+  TEventDict = TDictionary<ShortInt, Cardinal>;
+  TEventPair = TPair<ShortInt, Cardinal>;
 type
   TMainForm = class(TForm)
     OpenDialog: TOpenDialog;
@@ -302,6 +306,7 @@ type
     MShowVars: TMenuItem;
     MProfileROL: TMenuItem;
     MFormatROL: TMenuItem;
+    MStats: TMenuItem;
     procedure BtOpenClick(Sender: TObject);
     procedure FormCreate(Sender: TObject);
     procedure TrkChChange(Sender: TObject);
@@ -456,6 +461,7 @@ type
     procedure Loopstart1Click(Sender: TObject);
     procedure Loopend1Click(Sender: TObject);
     procedure MCalcLenClick(Sender: TObject);
+    procedure MStatsClick(Sender: TObject);
     procedure MMerge2Click(Sender: TObject);
     procedure MMerge1Click(Sender: TObject);
     procedure MFormatMIDClick(Sender: TObject);
@@ -6981,6 +6987,68 @@ begin
   ':' + Format('%.2d', [(Time div 1000) mod 60]) +
   '.' + Format('%.3d', [Time mod 1000]);
   MessageBox(Handle, PWideChar(S), 'Song length', mb_IconInformation or mb_Ok);
+end;
+
+procedure TMainForm.MStatsClick(Sender: TObject);
+var
+  Selected: Boolean;
+  I, J: Integer;
+  Value: ShortInt;
+  S: String;
+  Ticks: TTicksDict;
+  TicksPair: TTicksPair;
+  Events: TEventDict;
+  EventsPair: TEventPair;
+  Notes: TEventDict;
+  NotesPair: TEventPair;
+begin
+  Selected := MessageBox(Handle, 'Analyze only selected track?',
+    'Question', MB_YESNO or MB_ICONQUESTION) = mrYes;
+  Ticks := TTicksDict.Create;
+  Events := TEventDict.Create;
+  Notes := TEventDict.Create;
+  for I := 0 to Length(TrackData) - 1 do
+  begin
+    if Selected and (I <> TrkCh.ItemIndex) then
+      Continue;
+    for J := 0 to Length(TrackData[I].Data) - 1 do
+    begin
+      // Ticks
+      if TrackData[I].Data[J].Ticks > 0 then
+        if Ticks.ContainsKey(TrackData[I].Data[J].Ticks) then
+          Ticks[TrackData[I].Data[J].Ticks] := Ticks[TrackData[I].Data[J].Ticks] + 1
+        else
+          Ticks.Add(TrackData[I].Data[J].Ticks, 1);
+      // Events
+      Value := TrackData[I].Data[J].Status shr 4;
+      if Events.ContainsKey(Value) then
+        Events[Value] := Events[Value] + 1
+      else
+        Events.Add(Value, 1);
+      // Notes
+      if (Value = 9) and (TrackData[I].Data[J].BParm2 > 0) then
+      begin
+        Value := TrackData[I].Data[J].BParm1;
+        if Notes.ContainsKey(Value) then
+          Notes[Value] := Notes[Value] + 1
+        else
+          Notes.Add(Value, 1);
+      end;
+    end;
+  end;
+  S := 'Ticks statistics:' + #13#10 +
+       'Delta | Count' + #13#10;
+  for TicksPair in Ticks do
+    S := S + IntToStr(TicksPair.Key) + ': ' + IntToStr(TicksPair.Value) + #13#10;
+  S := S + #13#10 + 'Event statistics:' + #13#10 +
+       'Event | Count' + #13#10;
+  for EventsPair in Events do
+    S := S + IntToStr(EventsPair.Key) + ': ' + IntToStr(EventsPair.Value) + #13#10;
+  S := S + #13#10 + 'Note statistics:' + #13#10 +
+       'Note | Count' + #13#10;
+  for NotesPair in Notes do
+    S := S + IntToStr(NotesPair.Key) + ': ' + IntToStr(NotesPair.Value) + #13#10;
+  Log.Lines.Add(S);
 end;
 
 procedure TMainForm.Changechannel1Click(Sender: TObject);
