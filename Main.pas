@@ -4916,6 +4916,7 @@ var
   B: Byte;
   Division: Word;
   Rhythm: Boolean;
+  Volumes: Array[0..15] of ShortInt;
   SName: String;
 begin
   Log.Lines.Add('[*] Converting AdLib MUS to Standard MIDI...');
@@ -4934,6 +4935,7 @@ begin
   for I := 0 to Length(TrackData) - 1 do
   begin
     // Step 1: Convert events
+    FillChar(Volumes, SizeOf(Volumes), -1);
     J := 0;
     while J < Length(TrackData[I].Data) do
     begin
@@ -4949,19 +4951,58 @@ begin
       case TrackData[I].Data[J].Status shr 4 of
         8: // Note Off
         begin
+          if TrackData[I].Data[J].BParm2 > 0 then
+          begin
+            if Volumes[TrackData[I].Data[J].Status and $F] <> ShortInt(TrackData[I].Data[J].BParm2) then
+            begin
+              Volumes[TrackData[I].Data[J].Status and $F] := TrackData[I].Data[J].BParm2;
+              NewEvent(I, J, $B0, 7);
+              TrackData[I].Data[J].Ticks := TrackData[I].Data[J + 1].Ticks;
+              TrackData[I].Data[J].Status := $B0 or TrackData[I].Data[J + 1].Status and $F;
+              TrackData[I].Data[J].BParm1 := 7;
+              TrackData[I].Data[J].BParm2 := Volumes[TrackData[I].Data[J].Status and $F];
+              Inc(J);
+              TrackData[I].Data[J].Ticks := 0;
+            end;
+            TrackData[I].Data[J].BParm2 := 0;
+          end;
           if Rhythm then
             ROL_MIDIDrum(TrackData[I].Data[J]);
         end;
         9: // Note On
         begin
+          if TrackData[I].Data[J].BParm2 > 0 then
+          begin
+            if Volumes[TrackData[I].Data[J].Status and $F] <> ShortInt(TrackData[I].Data[J].BParm2) then
+            begin
+              Volumes[TrackData[I].Data[J].Status and $F] := TrackData[I].Data[J].BParm2;
+              NewEvent(I, J, $B0, 7);
+              TrackData[I].Data[J].Ticks := TrackData[I].Data[J + 1].Ticks;
+              TrackData[I].Data[J].Status := $B0 or TrackData[I].Data[J + 1].Status and $F;
+              TrackData[I].Data[J].BParm1 := 7;
+              TrackData[I].Data[J].BParm2 := Volumes[TrackData[I].Data[J].Status and $F];
+              Inc(J);
+              TrackData[I].Data[J].Ticks := 0;
+            end;
+            TrackData[I].Data[J].BParm2 := 127;
+          end;
           if Rhythm then
             ROL_MIDIDrum(TrackData[I].Data[J]);
         end;
         10: // Poly Aftertouch -> Volume Change
         begin
-          TrackData[I].Data[J].Status := $B0 or TrackData[I].Data[J].Status and $F;
-          TrackData[I].Data[J].BParm2 := TrackData[I].Data[J].BParm1;
-          TrackData[I].Data[J].BParm1 := 7;
+          if Volumes[TrackData[I].Data[J].Status and $F] <> ShortInt(TrackData[I].Data[J].BParm1) then
+          begin
+            Volumes[TrackData[I].Data[J].Status and $F] := TrackData[I].Data[J].BParm1;
+            TrackData[I].Data[J].Status := $B0 or TrackData[I].Data[J].Status and $F;
+            TrackData[I].Data[J].BParm1 := 7;
+            TrackData[I].Data[J].BParm2 := Volumes[TrackData[I].Data[J].Status and $F];
+          end
+          else
+          begin
+            DelEvent(I, J, True);
+            Continue;
+          end;
         end;
         12: // Program Change
         begin
@@ -5246,7 +5287,6 @@ type
 var
   Notes: Array[0..15] of ShortInt;
   Volumes: Array[0..15] of ShortInt;
-  Volume: ShortInt;
   Insts: TList;
   P: PInst;
   I,J,K,Idx: Integer;
@@ -5266,33 +5306,36 @@ begin
       case TrackData[I].Data[J].Status shr 4 of
         8: // Note Off
         begin
-          Volume := Volumes[TrackData[I].Data[J].Status and $F];
-          Volumes[TrackData[I].Data[J].Status and $F] := TrackData[I].Data[J].BParm2;
-          if TrackData[I].Data[J].BParm1 = 0 then
-          begin // Set last note off and set volume
-            if Notes[TrackData[I].Data[J].Status and $F] = -1 then
-            begin // No note on channel -> convert to volume change
-              TrackData[I].Data[J].Status := $B0 or TrackData[I].Data[J].Status and $F;
-              TrackData[I].Data[J].BParm1 := 7;
-              if Volumes[TrackData[I].Data[J].Status and $F] = Volume then
-              begin // Volume already set
-                DelEvent(I, J, True);
-                Continue;
-              end;
-            end
-            else
+          if TrackData[I].Data[J].BParm2 > 0 then
+          begin
+            if Volumes[TrackData[I].Data[J].Status and $F] <> ShortInt(TrackData[I].Data[J].BParm2) then
             begin
-              // Standard MIDI treats Note On with zero velocity as Note Off
-              TrackData[I].Data[J].Status := $90 or TrackData[I].Data[J].Status and $F;
-              TrackData[I].Data[J].BParm1 := Notes[TrackData[I].Data[J].Status and $F];
-              TrackData[I].Data[J].BParm2 := 0;
-              Notes[TrackData[I].Data[J].Status and $F] := -1;
+              Volumes[TrackData[I].Data[J].Status and $F] := TrackData[I].Data[J].BParm2;
+              NewEvent(I, J, $B0, 7);
+              TrackData[I].Data[J].Ticks := TrackData[I].Data[J + 1].Ticks;
+              TrackData[I].Data[J].Status := $B0 or TrackData[I].Data[J + 1].Status and $F;
+              TrackData[I].Data[J].BParm1 := 7;
+              TrackData[I].Data[J].BParm2 := Volumes[TrackData[I].Data[J].Status and $F];
+              Inc(J);
+              TrackData[I].Data[J].Ticks := 0;
             end;
+            TrackData[I].Data[J].BParm2 := 0;
+          end;
+
+          if Notes[TrackData[I].Data[J].Status and $F] = -1 then
+          begin // No note on channel
+            DelEvent(I, J, True);
+            Continue;
           end
           else
-          begin // Normal Note Off
+          begin
+            // Standard MIDI treats Note On with zero velocity as Note Off
             TrackData[I].Data[J].Status := $90 or TrackData[I].Data[J].Status and $F;
-            TrackData[I].Data[J].BParm2 := 0;
+            if TrackData[I].Data[J].BParm1 = 0 then
+            begin // Restore Note value
+              TrackData[I].Data[J].BParm1 := Notes[TrackData[I].Data[J].Status and $F];
+              Notes[TrackData[I].Data[J].Status and $F] := -1;
+            end;
           end;
 
           if Rhythm and (TrackData[I].Data[J].Status shr 4 <> $B) then
@@ -5301,9 +5344,23 @@ begin
         end;
         9: // Note On
         begin
-          Notes[TrackData[I].Data[J].Status and $F] := TrackData[I].Data[J].BParm1;
-          Volumes[TrackData[I].Data[J].Status and $F] := TrackData[I].Data[J].BParm2;
-          if TrackData[I].Data[J].BParm2 = 0 then // Treat as Note Off
+          if TrackData[I].Data[J].BParm2 > 0 then
+          begin
+            if Volumes[TrackData[I].Data[J].Status and $F] <> ShortInt(TrackData[I].Data[J].BParm2) then
+            begin
+              Volumes[TrackData[I].Data[J].Status and $F] := TrackData[I].Data[J].BParm2;
+              NewEvent(I, J, $B0, 7);
+              TrackData[I].Data[J].Ticks := TrackData[I].Data[J + 1].Ticks;
+              TrackData[I].Data[J].Status := $B0 or TrackData[I].Data[J + 1].Status and $F;
+              TrackData[I].Data[J].BParm1 := 7;
+              TrackData[I].Data[J].BParm2 := Volumes[TrackData[I].Data[J].Status and $F];
+              Inc(J);
+              TrackData[I].Data[J].Ticks := 0;
+            end;
+            TrackData[I].Data[J].BParm2 := 127;
+            Notes[TrackData[I].Data[J].Status and $F] := TrackData[I].Data[J].BParm1;
+          end
+          else // Treat as Note Off
             Notes[TrackData[I].Data[J].Status and $F] := -1;
 
           if Rhythm then
@@ -5313,11 +5370,19 @@ begin
         10..12,14: Inc(J);
         13: // Channel Aftertouch -> Volume Change
         begin
-          Volumes[TrackData[I].Data[J].Status and $F] := TrackData[I].Data[J].BParm1;
-          TrackData[I].Data[J].Status := $B0 or TrackData[I].Data[J].Status and $F;
-          TrackData[I].Data[J].BParm2 := TrackData[I].Data[J].BParm1;
-          TrackData[I].Data[J].BParm1 := 7;
-          Inc(J);
+          if Volumes[TrackData[I].Data[J].Status and $F] <> ShortInt(TrackData[I].Data[J].BParm1) then
+          begin
+            Volumes[TrackData[I].Data[J].Status and $F] := TrackData[I].Data[J].BParm1;
+            TrackData[I].Data[J].Status := $B0 or TrackData[I].Data[J].Status and $F;
+            TrackData[I].Data[J].BParm1 := 7;
+            TrackData[I].Data[J].BParm2 := Volumes[TrackData[I].Data[J].Status and $F];
+            Inc(J);
+          end
+          else
+          begin
+            DelEvent(I, J, True);
+            Continue;
+          end;
         end;
         15: // System
         begin
@@ -5465,6 +5530,7 @@ var
   Speed: Double;
   Division: Word;
   TuneName: String;
+  Volumes: Array[0..15] of ShortInt;
 begin
   Log.Lines.Add('[*] Converting Standard MIDI to AdLib MUS...');
   Application.ProcessMessages;
@@ -5475,9 +5541,25 @@ begin
   end;
   TuneName := '';
   for I := 0 to Length(TrackData) - 1 do begin
+    FillChar(Volumes, SizeOf(Volumes), -1);
     J := 0;
     while J < Length(TrackData[I].Data) do begin
       case TrackData[I].Data[J].Status shr 4 of
+        8: // Note Off
+        begin
+          if Volumes[TrackData[I].Data[J].Status and $F] > -1 then
+            TrackData[I].Data[J].BParm2 := Volumes[TrackData[I].Data[J].Status and $F]
+          else
+            TrackData[I].Data[J].BParm2 := 127;
+        end;
+        9: // Note On
+        begin
+          if TrackData[I].Data[J].BParm2 > 0 then
+            if Volumes[TrackData[I].Data[J].Status and $F] > -1 then
+              TrackData[I].Data[J].BParm2 := Volumes[TrackData[I].Data[J].Status and $F]
+            else
+              TrackData[I].Data[J].BParm2 := 127;
+        end;
         10: // Poly Aftertouch
         begin
           // Not compatible with MUS A# xx event
@@ -5486,11 +5568,18 @@ begin
         end;
         11: // Control Change
         begin
-          if TrackData[I].Data[J].BParm1 = 7 then // Volume Change
-          begin
+          if (TrackData[I].Data[J].BParm1 = 7)
+          and (Volumes[TrackData[I].Data[J].Status and $F] <> ShortInt(TrackData[I].Data[J].BParm2)) then
+          begin // Volume Change
+            Volumes[TrackData[I].Data[J].Status and $F] := TrackData[I].Data[J].BParm2;
             TrackData[I].Data[J].Status := $A0 or TrackData[I].Data[J].Status and $F;
-            TrackData[I].Data[J].BParm1 := TrackData[I].Data[J].BParm2;
+            TrackData[I].Data[J].BParm1 := Volumes[TrackData[I].Data[J].Status and $F];
             TrackData[I].Data[J].BParm2 := 0;
+          end
+          else
+          begin
+            DelEvent(I, J, True);
+            Continue;
           end;
         end;
         15: // System Event
@@ -5559,7 +5648,6 @@ type
 var
   Notes: Array[0..15] of ShortInt;
   Volumes: Array[0..15] of ShortInt;
-  Volume: ShortInt;
   InitTempo: Cardinal;
   I, J, K, Idx: Integer;
   Speed: Double;
@@ -5588,34 +5676,34 @@ begin
       case TrackData[I].Data[J].Status shr 4 of
         8: // Note Off
         begin
-          Volume := Volumes[TrackData[I].Data[J].Status and $F];
-          Volumes[TrackData[I].Data[J].Status and $F] := TrackData[I].Data[J].BParm2;
-          if TrackData[I].Data[J].BParm1 = 0 then
-          begin // Set last note off and set volume
-            if Notes[TrackData[I].Data[J].Status and $F] = -1 then
-            begin // No note on channel -> convert to volume change
-              TrackData[I].Data[J].Status := $A0 or TrackData[I].Data[J].Status and $F;
-              TrackData[I].Data[J].BParm1 := TrackData[I].Data[J].BParm2;
-              TrackData[I].Data[J].BParm2 := 0;
-              if Volumes[TrackData[I].Data[J].Status and $F] = Volume then
-              begin // Volume already set
-                DelEvent(I, J, True);
-                Continue;
-              end;
-            end
-            else
+          if TrackData[I].Data[J].BParm2 > 0 then
+            if Volumes[TrackData[I].Data[J].Status and $F] <> ShortInt(TrackData[I].Data[J].BParm2) then
             begin
-              // MUS treats Note On with zero velocity as Note Off
-              TrackData[I].Data[J].Status := $90 or TrackData[I].Data[J].Status and $F;
-              TrackData[I].Data[J].BParm1 := Notes[TrackData[I].Data[J].Status and $F];
+              Volumes[TrackData[I].Data[J].Status and $F] := TrackData[I].Data[J].BParm2;
+              NewEvent(I, J, $A0, 0);
+              TrackData[I].Data[J].Ticks := TrackData[I].Data[J + 1].Ticks;
+              TrackData[I].Data[J].Status := $A0 or TrackData[I].Data[J + 1].Status and $F;
+              TrackData[I].Data[J].BParm1 := Volumes[TrackData[I].Data[J].Status and $F];
               TrackData[I].Data[J].BParm2 := 0;
-              Notes[TrackData[I].Data[J].Status and $F] := -1;
+              Inc(J);
+              TrackData[I].Data[J].Ticks := 0;
             end;
+
+          if Notes[TrackData[I].Data[J].Status and $F] = -1 then
+          begin // No note on channel
+            DelEvent(I, J, True);
+            Continue;
           end
           else
-          begin // Normal Note Off
+          begin
+            // MUS treats Note On with zero velocity as Note Off
             TrackData[I].Data[J].Status := $90 or TrackData[I].Data[J].Status and $F;
             TrackData[I].Data[J].BParm2 := 0;
+            if TrackData[I].Data[J].BParm1 = 0 then
+            begin // Restore Note value
+              TrackData[I].Data[J].BParm1 := Notes[TrackData[I].Data[J].Status and $F];
+              Notes[TrackData[I].Data[J].Status and $F] := -1;
+            end;
           end;
         end;
         9: // Note On
@@ -5633,8 +5721,16 @@ begin
         end;
         13: // Volume Change D# -> Volume Change A#
         begin
-          TrackData[I].Data[J].Status := $A0 or TrackData[I].Data[J].Status and $F;
-          Volumes[TrackData[I].Data[J].Status and $F] := TrackData[I].Data[J].BParm1;
+          if Volumes[TrackData[I].Data[J].Status and $F] <> ShortInt(TrackData[I].Data[J].BParm1) then
+          begin
+            TrackData[I].Data[J].Status := $A0 or TrackData[I].Data[J].Status and $F;
+            Volumes[TrackData[I].Data[J].Status and $F] := TrackData[I].Data[J].BParm1;
+          end
+          else
+          begin
+            DelEvent(I, J, True);
+            Continue;
+          end;
         end;
         15: // System Event
         begin
@@ -6281,7 +6377,6 @@ type
 var
   Notes: Array[0..15] of ShortInt;
   Volumes: Array[0..15] of ShortInt;
-  Volume: ShortInt;
   Insts: TList;
   P: PInst;
   I,J,K,Idx: Integer;
@@ -6323,52 +6418,78 @@ begin
       case TrackData[I].Data[J].Status shr 4 of
         8: // Note Off
         begin
-          Volume := Volumes[TrackData[I].Data[J].Status and $F];
-          Volumes[TrackData[I].Data[J].Status and $F] := TrackData[I].Data[J].BParm2;
-          if TrackData[I].Data[J].BParm1 = 0 then
-          begin // Set last note off and set volume
-            if Notes[TrackData[I].Data[J].Status and $F] = -1 then
-            begin // No note on channel -> convert to volume change
-              TrackData[I].Data[J].Status := $B0 or TrackData[I].Data[J].Status and $F;
-              TrackData[I].Data[J].BParm1 := 7;
-              if Volumes[TrackData[I].Data[J].Status and $F] = Volume then
-              begin // Volume already set
-                DelEvent(I, J, True);
-                Continue;
-              end;
-            end
-            else
+          if TrackData[I].Data[J].BParm2 > 0 then
+          begin
+            if Volumes[TrackData[I].Data[J].Status and $F] <> ShortInt(TrackData[I].Data[J].BParm2) then
             begin
-              // CMF treats Note On with zero velocity as Note Off
-              TrackData[I].Data[J].Status := $90 or TrackData[I].Data[J].Status and $F;
-              TrackData[I].Data[J].BParm1 := Notes[TrackData[I].Data[J].Status and $F];
-              TrackData[I].Data[J].BParm2 := 0;
-              Notes[TrackData[I].Data[J].Status and $F] := -1;
+              Volumes[TrackData[I].Data[J].Status and $F] := TrackData[I].Data[J].BParm2;
+              NewEvent(I, J, $B0, 7);
+              TrackData[I].Data[J].Ticks := TrackData[I].Data[J + 1].Ticks;
+              TrackData[I].Data[J].Status := $B0 or TrackData[I].Data[J + 1].Status and $F;
+              TrackData[I].Data[J].BParm1 := 7;
+              TrackData[I].Data[J].BParm2 := Volumes[TrackData[I].Data[J].Status and $F];
+              Inc(J);
+              TrackData[I].Data[J].Ticks := 0;
             end;
+            TrackData[I].Data[J].BParm2 := 0;
+          end;
+
+          if Notes[TrackData[I].Data[J].Status and $F] = -1 then
+          begin // No note on channel
+            DelEvent(I, J, True);
+            Continue;
           end
           else
-          begin // Normal Note Off
+          begin
+            // CMF treats Note On with zero velocity as Note Off
             TrackData[I].Data[J].Status := $90 or TrackData[I].Data[J].Status and $F;
-            TrackData[I].Data[J].BParm2 := 0;
+            if TrackData[I].Data[J].BParm1 = 0 then
+            begin // Restore Note value
+              TrackData[I].Data[J].BParm1 := Notes[TrackData[I].Data[J].Status and $F];
+              Notes[TrackData[I].Data[J].Status and $F] := -1;
+            end;
           end;
           Inc(J);
         end;
         9: // Note On
         begin
-          Notes[TrackData[I].Data[J].Status and $F] := TrackData[I].Data[J].BParm1;
-          Volumes[TrackData[I].Data[J].Status and $F] := TrackData[I].Data[J].BParm2;
-          if TrackData[I].Data[J].BParm2 = 0 then // Treat as Note Off
+          if TrackData[I].Data[J].BParm2 > 0 then
+          begin
+            if Volumes[TrackData[I].Data[J].Status and $F] <> ShortInt(TrackData[I].Data[J].BParm2) then
+            begin
+              Volumes[TrackData[I].Data[J].Status and $F] := TrackData[I].Data[J].BParm2;
+              NewEvent(I, J, $B0, 7);
+              TrackData[I].Data[J].Ticks := TrackData[I].Data[J + 1].Ticks;
+              TrackData[I].Data[J].Status := $B0 or TrackData[I].Data[J + 1].Status and $F;
+              TrackData[I].Data[J].BParm1 := 7;
+              TrackData[I].Data[J].BParm2 := Volumes[TrackData[I].Data[J].Status and $F];
+              Inc(J);
+              TrackData[I].Data[J].Ticks := 0;
+            end;
+            TrackData[I].Data[J].BParm2 := 127;
+            Notes[TrackData[I].Data[J].Status and $F] := TrackData[I].Data[J].BParm1;
+          end
+          else // Treat as Note Off
             Notes[TrackData[I].Data[J].Status and $F] := -1;
+
           Inc(J);
         end;
         10..12: Inc(J);
         13: // Channel Aftertouch -> Volume Change
         begin
-          Volumes[TrackData[I].Data[J].Status and $F] := TrackData[I].Data[J].BParm1;
-          TrackData[I].Data[J].Status := $B0 or TrackData[I].Data[J].Status and $F;
-          TrackData[I].Data[J].BParm2 := TrackData[I].Data[J].BParm1;
-          TrackData[I].Data[J].BParm1 := 7;
-          Inc(J);
+          if Volumes[TrackData[I].Data[J].Status and $F] <> ShortInt(TrackData[I].Data[J].BParm1) then
+          begin
+            Volumes[TrackData[I].Data[J].Status and $F] := TrackData[I].Data[J].BParm1;
+            TrackData[I].Data[J].Status := $B0 or TrackData[I].Data[J].Status and $F;
+            TrackData[I].Data[J].BParm1 := 7;
+            TrackData[I].Data[J].BParm2 := Volumes[TrackData[I].Data[J].Status and $F];
+            Inc(J);
+          end
+          else
+          begin
+            DelEvent(I, J, True);
+            Continue;
+          end;
         end;
         14: // Pitch Bend
         begin
