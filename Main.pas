@@ -4909,7 +4909,9 @@ end;
 
 procedure TMainForm.Convert_MUS_MID;
 var
-  InitTempo: Cardinal;
+  TPB: Word;
+  NewTempo: Cardinal;
+  TickFactor: Double;
   I, J: Integer;
   B: Byte;
   Division: Word;
@@ -4918,17 +4920,20 @@ var
 begin
   Log.Lines.Add('[*] Converting AdLib MUS to Standard MIDI...');
   Application.ProcessMessages;
-  if not SongData_GetDWord('InitTempo', InitTempo) then
+  if not SongData_GetWord('MUS_TicksPerBeat', TPB) then
   begin
-    Log.Lines.Add('[-] Initial Tempo is not defined.');
+    Log.Lines.Add('[-] Ticks Per Beat is not defined.');
     Exit;
   end;
+  NewTempo := 500000;
+  TickFactor := 60000000 / TPB / NewTempo;
   if SongData_GetInt('MUS_Percussive', I) then
     Rhythm := I > 0
   else
     Rhythm := False;
   for I := 0 to Length(TrackData) - 1 do
   begin
+    // Step 1: Convert events
     J := 0;
     while J < Length(TrackData[I].Data) do
     begin
@@ -4987,9 +4992,9 @@ begin
                 if ((TrackData[I].Data[J].DataArray[3] / 128) +
                 TrackData[I].Data[J].DataArray[2]) <> 0 then
                   TrackData[I].Data[J].Value :=
-                  Round(InitTempo / ((TrackData[I].Data[J].DataArray[3] / 128) + TrackData[I].Data[J].DataArray[2]))
+                  Round(NewTempo / ((TrackData[I].Data[J].DataArray[3] / 128) + TrackData[I].Data[J].DataArray[2]))
                 else
-                  TrackData[I].Data[J].Value := InitTempo;
+                  TrackData[I].Data[J].Value := NewTempo;
 
                 TrackData[I].Data[J].DataArray[0] := (TrackData[I].Data[J].Value shr 16) and $FF;
                 TrackData[I].Data[J].DataArray[1] := (TrackData[I].Data[J].Value shr 8) and $FF;
@@ -5009,6 +5014,11 @@ begin
       end;
       Inc(J);
     end;
+    // Step 2: Convert ticks
+    for J := 0 to Length(TrackData[I].Data) - 1 do
+      if TrackData[I].Data[J].Ticks > 0 then
+        TrackData[I].Data[J].Ticks := Round(TrackData[I].Data[J].Ticks * TickFactor);
+    // Step 3: Insert pitch bend ranges
     SongData_GetByte('MUS_PitchBendRange', B);
     if B > 1 then
     begin
@@ -5050,11 +5060,12 @@ begin
           TrackData[I].Data[J*5 + 4].BParm2 := $7F;
         end;
     end;
+    // Step 4: Insert tune name
     if (I = 0) and SongData_GetStr('MUS_TuneName', SName) then
       if SName <> '' then
-      begin // Insert tune name
+      begin
         NewEvent(I, 0, $FF, $03);
-        TrackData[I].Data[0].DataString := SName;
+        TrackData[I].Data[0].DataString := AnsiString(SName);
       end;
     Log.Lines.Add('[+] Track #'+IntToStr(I)+': '+IntToStr(Length(TrackData[I].Data))+' events converted.');
   end;
@@ -5062,7 +5073,7 @@ begin
   SongData.Strings.Clear;
 
   SongData_PutInt('MIDIType', 0);
-  SongData_PutDWord('InitTempo', 500000);
+  SongData_PutDWord('InitTempo', NewTempo);
   SongData_PutInt('SMPTE', 0);
   SongData_PutInt('Division', Division);
   Log.Lines.Add('[+] Done.');
@@ -5070,7 +5081,9 @@ end;
 
 procedure TMainForm.Convert_MUS_MDI;
 var
-  InitTempo: Cardinal;
+  TPB: Word;
+  NewTempo: Cardinal;
+  TickFactor: Double;
   I, J, K: Integer;
   W: Word;
   SName, SData: String;
@@ -5079,12 +5092,15 @@ var
 begin
   Log.Lines.Add('[*] Converting AdLib MUS to AdLib MDI...');
   Application.ProcessMessages;
-  if not SongData_GetDWord('InitTempo', InitTempo) then
+  if not SongData_GetWord('MUS_TicksPerBeat', TPB) then
   begin
-    Log.Lines.Add('[-] Initial Tempo is not defined.');
+    Log.Lines.Add('[-] Ticks Per Beat is not defined.');
     Exit;
   end;
+  NewTempo := 500000;
+  TickFactor := 60000000 / TPB / NewTempo;
   for I := 0 to Length(TrackData) - 1 do begin
+    // Step 1: Convert events
     J := 0;
     while J < Length(TrackData[I].Data) do begin
       // Process events
@@ -5149,9 +5165,9 @@ begin
                 if ((TrackData[I].Data[J].DataArray[3] / 128) +
                 TrackData[I].Data[J].DataArray[2]) <> 0 then
                   TrackData[I].Data[J].Value :=
-                  Round(InitTempo / ((TrackData[I].Data[J].DataArray[3] / 128) + TrackData[I].Data[J].DataArray[2]))
+                  Round(NewTempo / ((TrackData[I].Data[J].DataArray[3] / 128) + TrackData[I].Data[J].DataArray[2]))
                 else
-                  TrackData[I].Data[J].Value := InitTempo;
+                  TrackData[I].Data[J].Value := NewTempo;
 
                 TrackData[I].Data[J].DataArray[0] := (TrackData[I].Data[J].Value shr 16) and $FF;
                 TrackData[I].Data[J].DataArray[1] := (TrackData[I].Data[J].Value shr 8) and $FF;
@@ -5171,7 +5187,11 @@ begin
       end;
       Inc(J);
     end;
-
+    // Step 2: Convert ticks
+    for J := 0 to Length(TrackData[I].Data) - 1 do
+      if TrackData[I].Data[J].Ticks > 0 then
+        TrackData[I].Data[J].Ticks := Round(TrackData[I].Data[J].Ticks * TickFactor);
+    // Step 3: Add MDI specific events
     NewEvent(I, 0, $FF, $7F);
     SetLength(TrackData[I].Data[0].DataArray, 6);
     TrackData[I].Data[0].Len := Length(TrackData[I].Data[0].DataArray);
@@ -5200,14 +5220,20 @@ begin
     if J <> 0 then
       J := 1;
     TrackData[I].Data[0].DataArray[5] := J;   // Value
-
+    // Step 4: Insert tune name
+    if (I = 0) and SongData_GetStr('MUS_TuneName', SName) then
+      if SName <> '' then
+      begin
+        NewEvent(I, 0, $FF, $03);
+        TrackData[I].Data[0].DataString := AnsiString(SName);
+      end;
     Log.Lines.Add('[+] Track #'+IntToStr(I)+': '+IntToStr(Length(TrackData[I].Data))+' events converted.');
   end;
   SongData_GetWord('Division', Division);
   SongData.Strings.Clear;
 
   SongData_PutInt('MIDIType', 0);
-  SongData_PutDWord('InitTempo', 500000);
+  SongData_PutDWord('InitTempo', NewTempo);
   SongData_PutInt('SMPTE', 0);
   SongData_PutInt('Division', Division);
   Log.Lines.Add('[+] Done.');
@@ -5433,8 +5459,6 @@ begin
 end;
 
 procedure TMainForm.Convert_MID_MUS;
-const
-  TPB = 240;
 var
   InitTempo: Cardinal;
   I, J: Integer;
@@ -5484,7 +5508,7 @@ begin
                 end;
                 81: // Set Tempo -> Set Speed
                 begin
-                  Speed := InitTempo / TrackData[I].Data[J].Value / (InitTempo / (60000000 / TPB));
+                  Speed := InitTempo / TrackData[I].Data[J].Value;
                   TrackData[I].Data[J].Status := $F0;
                   SetLength(TrackData[I].Data[J].DataArray, 5);
                   TrackData[I].Data[J].Len := Length(TrackData[I].Data[J].DataArray);
@@ -5516,18 +5540,16 @@ begin
   SongData_PutInt('MUS_Version', 1);
   SongData_PutInt('MUS_ID', 0);
   SongData_PutStr('MUS_TuneName', TuneName);
-  SongData_PutInt('MUS_TicksPerBeat', TPB);
+  SongData_PutInt('MUS_TicksPerBeat', 60000000 div InitTempo);
   SongData_PutInt('MUS_Percussive', 1);
   SongData_PutInt('MUS_PitchBendRange', 1);
   SongData_GetWord('Division', Division);
   SongData_PutInt('MUS_BasicTempo', Division);
-  SongData_PutDWord('InitTempo', 60000000 div TPB);
+  SongData_PutDWord('InitTempo', InitTempo);
   Log.Lines.Add('[+] Done.');
 end;
 
 procedure TMainForm.Convert_MDI_MUS;
-const
-  TPB = 240;
 type
   TInst = record
     Name: String;
@@ -5635,7 +5657,7 @@ begin
                 end;
                 81: // Set Tempo -> Set Speed
                 begin
-                  Speed := InitTempo / TrackData[I].Data[J].Value / (InitTempo / (60000000 / TPB));
+                  Speed := InitTempo / TrackData[I].Data[J].Value;
                   TrackData[I].Data[J].Status := $F0;
                   SetLength(TrackData[I].Data[J].DataArray, 5);
                   TrackData[I].Data[J].Len := Length(TrackData[I].Data[J].DataArray);
@@ -5725,7 +5747,7 @@ begin
   SongData_PutInt('MUS_Version', 1);
   SongData_PutInt('MUS_ID', 0);
   SongData_PutStr('MUS_TuneName', TuneName);
-  SongData_PutInt('MUS_TicksPerBeat', TPB);
+  SongData_PutInt('MUS_TicksPerBeat', 60000000 div InitTempo);
   if (Perc = '+') or (Perc = '') then
     SongData_PutInt('MUS_Percussive', 1)
   else
@@ -5736,7 +5758,7 @@ begin
     SongData_PutStr('MUS_PitchBendRange', PBend);
   SongData_GetWord('Division', Division);
   SongData_PutInt('MUS_BasicTempo', Division);
-  SongData_PutDWord('InitTempo', 60000000 div TPB);
+  SongData_PutDWord('InitTempo', InitTempo);
 
   if Insts.Count > 0 then
   begin
