@@ -508,7 +508,7 @@ type
     function ReadMIDS(var F: TMemoryStream): Boolean;
     function ReadXMI(var F: TMemoryStream): Boolean;
     function ReadCMF(var F: TMemoryStream): Boolean;
-    function ReadROL(var F: TMemoryStream): Boolean;
+    function ReadROL(var F: TMemoryStream; FileName: String): Boolean;
     function ReadMUS(var F: TMemoryStream; FileName: String): Boolean;
     function ReadRaw(var F: TMemoryStream): Boolean;
     function ReadSYX(var F: TMemoryStream): Boolean;
@@ -521,7 +521,7 @@ type
     procedure WriteRMI(var F: TMemoryStream);
     procedure WriteXMI(var F: TMemoryStream);
     procedure WriteCMF(var F: TMemoryStream);
-    procedure WriteROL(var F: TMemoryStream);
+    procedure WriteROL(var F: TMemoryStream; FileName: String);
     procedure WriteMUS(var F: TMemoryStream; FileName: String);
     procedure WriteRaw(var F: TMemoryStream);
     procedure WriteSYX(var F: TMemoryStream);
@@ -1652,12 +1652,14 @@ begin
   CalculateEvnts;
 end;
 
-function MUS_LoadBank(FileName: String): Boolean;
+function ROL_LoadBank(FileName: String): Boolean;
 var
   M: TMemoryStream;
-  W: Word;
-  InstCnt, InstOff: Word;
+  W, numUsed, numInstruments: Word;
+  offsetName, offsetData: DWord;
+  Sign: Array[0..5] of AnsiChar;
   I, J: Integer;
+  B: Byte;
   Name: Array[0..8] of AnsiChar;
   S: String;
 begin
@@ -1669,7 +1671,7 @@ begin
     M.Free;
     Exit;
   end;
-  if M.Size < 6 then begin
+  if M.Size < 28 then begin
     // Wrong file size
     M.Free;
     Exit;
@@ -1677,44 +1679,70 @@ begin
 
   M.Seek(0, soFromBeginning);
   M.ReadBuffer(W, 2);
-  if W <> 1 then begin
+  if W > 1 then begin
     // Wrong file version
     M.Free;
     Exit;
   end;
-  M.ReadBuffer(InstCnt, 2);
-  if M.Size < InstCnt * 65 + 6 then begin
+  M.ReadBuffer(Sign, 6);
+  if Sign <> 'ADLIB-' then
+  begin
+    // Wrong signature
+    M.Free;
+    Exit;
+  end;
+  M.ReadBuffer(numUsed, 2);
+  M.ReadBuffer(numInstruments, 2);
+  M.ReadBuffer(offsetName, 4);
+  M.ReadBuffer(offsetData, 4);
+
+  if (offsetName >= M.Size) or (offsetData >= M.Size) then
+  begin
+    // Wrong offsets
+    M.Free;
+    Exit;
+  end;
+  if (M.Size < offsetName + 12 * numInstruments)
+  or (M.Size < offsetData + 30 * numInstruments) then begin
     // Wrong file size
     M.Free;
     Exit;
   end;
-  M.ReadBuffer(InstOff, 2);
-  if InstOff <> InstCnt * 9 + 6 then begin
-    // Wrong instrument offset
-    M.Free;
-    Exit;
-  end;
-  SongData_PutInt('SND_Version', W);
-  for I := 0 to InstCnt - 1 do
+
+  SongData_PutInt('BNK_Version', W);
+  SongData_PutStr('BNK_Signature', String(Sign));
+  SongData_PutInt('BNK_Used', numUsed);
+
+  M.Seek(offsetName, soFromBeginning);
+  for I := 0 to numInstruments - 1 do
   begin
+    M.ReadBuffer(W, 2);
+    SongData_PutInt('BNK_Idx#'+IntToStr(I), W);
+    M.ReadBuffer(B, 1);
+    SongData_PutInt('BNK_Flags#'+IntToStr(I), B);
     M.ReadBuffer(Name[0], 9);
-    SongData_PutStr('SND_Name#'+IntToStr(I), PAnsiChar(@Name[0]));
+    SongData_PutStr('BNK_Name#'+IntToStr(I), String(PAnsiChar(@Name[0])));
   end;
-  for I := 0 to InstCnt - 1 do
+  M.Seek(offsetData, soFromBeginning);
+  for I := 0 to numInstruments - 1 do
   begin
+    M.ReadBuffer(B, 1);
+    SongData_PutInt('BNK_Perc#'+IntToStr(I), B);
+    M.ReadBuffer(B, 1);
+    SongData_PutInt('BNK_Chan#'+IntToStr(I), B);
     S := '';
     for J := 0 to (13+13+2) - 1 do
     begin
-      M.ReadBuffer(W, 2);
-      S := S + IntToStr(W) + ' ';
+      M.ReadBuffer(B, 1);
+      S := S + IntToStr(B) + ' ';
     end;
-    SongData_PutStr('SND_Data#'+IntToStr(I), S);
+    SongData_PutStr('BNK_Data#'+IntToStr(I), S);
   end;
   M.Free;
   Result := True;
 end;
 
-function TMainForm.ReadROL(var F: TMemoryStream): Boolean;
+function TMainForm.ReadROL(var F: TMemoryStream; FileName: String): Boolean;
 var
   W: Word;
   Meta: Array[0..40-1] of Byte;
@@ -1724,6 +1752,8 @@ var
   Inst: Array[0..9 + 1 + 2 - 1] of Byte;
   Fl: Single;
   Tk: Word;
+  Bank: String;
+  BankLoad: Boolean;
 begin
   Result := False;
   Log.Lines.Add('[*] Reading AdLib ROL file...');
@@ -1880,6 +1910,19 @@ begin
         Break;
     end;
   end;
+
+  Log.Lines.Add('[*] Looking for instrument bank file...');
+  Bank := ChangeFileExt(FileName, '.bnk');
+  BankLoad := ROL_LoadBank(Bank);
+  if not BankLoad then
+  begin
+    Bank := ExtractFilePath(FileName) + 'standard.bnk';
+    BankLoad := ROL_LoadBank(Bank);
+  end;
+  if BankLoad then
+    Log.Lines.Add('[*] Loaded instrument bank: ' + Bank)
+  else
+    Log.Lines.Add('[*] Instrument bank file not found.');
   SongData_PutInt('MIDIType', 1);
   Result := True;
   Log.Lines.Add('');
@@ -1889,6 +1932,68 @@ begin
   Log.Lines.Add('');
   RefTrackList;
   CalculateEvnts;
+end;
+
+function MUS_LoadBank(FileName: String): Boolean;
+var
+  M: TMemoryStream;
+  W: Word;
+  InstCnt, InstOff: Word;
+  I, J: Integer;
+  Name: Array[0..8] of AnsiChar;
+  S: String;
+begin
+  Result := False;
+  M := TMemoryStream.Create;
+  try
+    M.LoadFromFile(FileName);
+  except
+    M.Free;
+    Exit;
+  end;
+  if M.Size < 6 then begin
+    // Wrong file size
+    M.Free;
+    Exit;
+  end;
+
+  M.Seek(0, soFromBeginning);
+  M.ReadBuffer(W, 2);
+  if W <> 1 then begin
+    // Wrong file version
+    M.Free;
+    Exit;
+  end;
+  M.ReadBuffer(InstCnt, 2);
+  if M.Size < InstCnt * 65 + 6 then begin
+    // Wrong file size
+    M.Free;
+    Exit;
+  end;
+  M.ReadBuffer(InstOff, 2);
+  if InstOff <> InstCnt * 9 + 6 then begin
+    // Wrong instrument offset
+    M.Free;
+    Exit;
+  end;
+  SongData_PutInt('SND_Version', W);
+  for I := 0 to InstCnt - 1 do
+  begin
+    M.ReadBuffer(Name[0], 9);
+    SongData_PutStr('SND_Name#'+IntToStr(I), PAnsiChar(@Name[0]));
+  end;
+  for I := 0 to InstCnt - 1 do
+  begin
+    S := '';
+    for J := 0 to (13+13+2) - 1 do
+    begin
+      M.ReadBuffer(W, 2);
+      S := S + IntToStr(W) + ' ';
+    end;
+    SongData_PutStr('SND_Data#'+IntToStr(I), S);
+  end;
+  M.Free;
+  Result := True;
 end;
 
 function TMainForm.ReadMUS(var F: TMemoryStream; FileName: String): Boolean;
@@ -3898,7 +4003,104 @@ begin
   F.Seek(0, soFromEnd);
 end;
 
-procedure TMainForm.WriteROL(var F: TMemoryStream);
+function ROL_SaveBank(FileName: String): Boolean;
+var
+  M: TMemoryStream;
+  S: String;
+  numInstruments, W: Word;
+  dw: DWord;
+  Pad: Array[0..7] of Byte;
+  I, J: Integer;
+  B: Byte;
+  A: AnsiString;
+  Name: Array[0..8] of AnsiChar;
+  SL: TStringList;
+begin
+  Result := False;
+  numInstruments := 0;
+  while SongData_GetStr('BNK_Idx#'+IntToStr(numInstruments), S) do
+    Inc(numInstruments);
+
+  if numInstruments = 0 then
+    Exit;
+
+  M := TMemoryStream.Create;
+  if not SongData_GetWord('BNK_Version', W) then
+    W := 1;
+  M.WriteBuffer(W, 2);
+  if not SongData_GetStr('BNK_Signature', S) then
+    S := 'ADLIB-';
+  M.WriteBuffer(AnsiString(S)[1], 6);
+  if not SongData_GetWord('BNK_Used', W) then
+    W := numInstruments;
+  M.WriteBuffer(W, 2);
+  M.WriteBuffer(numInstruments, 2);
+  dw := 0;
+  M.WriteBuffer(dw, 4);
+  M.WriteBuffer(dw, 4);
+  FillChar(Pad, SizeOf(Pad), 0);
+  M.WriteBuffer(Pad, SizeOf(Pad));
+
+  dw := M.Position;
+  M.Seek(12, soFromBeginning);
+  M.WriteBuffer(dw, 4);
+  M.Seek(dw, soFromBeginning);
+
+  for I := 0 to numInstruments - 1 do
+  begin
+    if not SongData_GetWord('BNK_Idx#'+IntToStr(I), W) then
+      W := 0;
+    M.WriteBuffer(W, 2);
+    if not SongData_GetByte('BNK_Flags#'+IntToStr(I), B) then
+      B := 0;
+    M.WriteBuffer(B, 1);
+    FillChar(Name, Length(Name), 0);
+    SongData_GetStr('BNK_Name#'+IntToStr(I), S);
+    A := AnsiString(S);
+    Move(A[1], Name[0], Length(A));
+    M.WriteBuffer(Name, Length(Name));
+  end;
+
+  dw := M.Position;
+  M.Seek(16, soFromBeginning);
+  M.WriteBuffer(dw, 4);
+  M.Seek(dw, soFromBeginning);
+
+  for I := 0 to numInstruments - 1 do
+  begin
+    if not SongData_GetByte('BNK_Perc#'+IntToStr(I), B) then
+      B := 0;
+    M.WriteBuffer(B, 1);
+    if not SongData_GetByte('BNK_Chan#'+IntToStr(I), B) then
+      B := 0;
+    M.WriteBuffer(B, 1);
+    SongData_GetStr('BNK_Data#'+IntToStr(I), S);
+    SL := TStringList.Create;
+    SL.Delimiter := ' ';
+    SL.StrictDelimiter := True;
+    SL.DelimitedText := S;
+    for J := 0 to (13+13+2) - 1 do
+    begin
+      try
+        B := StrToInt(SL[J]);
+      except
+        B := 0;
+      end;
+      M.WriteBuffer(B, 1);
+    end;
+    SL.Free;
+  end;
+
+  Result := True;
+  try
+    M.SaveToFile(FileName);
+  except
+    Result := False;
+  end;
+  M.Free;
+end;
+
+procedure TMainForm.WriteROL(var F: TMemoryStream; FileName: String);
 var
   I, J: Integer;
   S: String;
@@ -4063,6 +4265,13 @@ begin
   F.Seek($36, soFromBeginning);
   F.WriteBuffer(Vars, SizeOf(Vars));
   F.Seek(0, soFromEnd);
+
+  Log.Lines.Add('[*] Saving instrument bank file...');
+  S := ChangeFileExt(FileName, '.bnk');
+  if not ROL_SaveBank(S) then
+    Log.Lines.Add('[-] Failed to save instrument bank file.')
+  else
+    Log.Lines.Add('[*] Saved instrument bank: ' + S);
 end;
 
 function MUS_SaveBank(FileName: String): Boolean;
@@ -8756,7 +8965,7 @@ begin
       Opened := ReadCMF(M);
     end;
     if Container = 'rol' then begin
-      Opened := ReadROL(M);
+      Opened := ReadROL(M, FileName);
     end;
     if Container = 'mus' then begin
       Opened := ReadMUS(M, FileName);
@@ -8883,7 +9092,7 @@ begin
   if TargetContainer = 'rol' then begin
     if TargetEventProfile = 'rol' then
       ConvertEvents('rol');
-    WriteROL(M);
+    WriteROL(M, FileName);
     Result := True;
   end;
   if TargetContainer = 'mus' then begin
