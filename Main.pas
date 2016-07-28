@@ -4046,20 +4046,34 @@ begin
   M.WriteBuffer(dw, 4);
   M.Seek(dw, soFromBeginning);
 
+  // Important: Sort in alphabetical order
+  SL := TStringList.Create;
   for I := 0 to numInstruments - 1 do
   begin
-    if not SongData_GetWord('BNK_Idx#'+IntToStr(I), W) then
+    SongData_GetStr('BNK_Name#'+IntToStr(I), S);
+    SL.Add(S);
+  end;
+  SL.Sort;
+  for I := 0 to SL.Count - 1 do
+  begin
+    for J := 0 to numInstruments - 1 do
+    begin
+      SongData_GetStr('BNK_Name#'+IntToStr(J), S);
+      if S = SL[I] then
+        Break;
+    end;
+    if not SongData_GetWord('BNK_Idx#'+IntToStr(J), W) then
       W := 0;
     M.WriteBuffer(W, 2);
-    if not SongData_GetByte('BNK_Flags#'+IntToStr(I), B) then
+    if not SongData_GetByte('BNK_Flags#'+IntToStr(J), B) then
       B := 0;
     M.WriteBuffer(B, 1);
     FillChar(Name, Length(Name), 0);
-    SongData_GetStr('BNK_Name#'+IntToStr(I), S);
     A := AnsiString(S);
     Move(A[1], Name[0], Length(A));
     M.WriteBuffer(Name, Length(Name));
   end;
+  SL.Free;
 
   dw := M.Position;
   M.Seek(16, soFromBeginning);
