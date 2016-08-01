@@ -1787,8 +1787,7 @@ begin
   SongData_PutInt('ROL_ScaleY', W);
   F.ReadBuffer(W, 2);
   SongData_PutInt('ROL_ScaleX', W);
-  F.ReadBuffer(B, 1);
-  SongData_PutInt('ROL_PitchBendRange', B);
+  F.Seek(1, soCurrent); // skip reserved value
   F.ReadBuffer(B, 1);
   SongData_PutInt('ROL_Melodic', B);
   F.Seek(90, soCurrent); // skip temp values
@@ -4152,8 +4151,7 @@ begin
   if not SongData_GetWord('ROL_ScaleX', W) then
     W := 56;
   F.WriteBuffer(W, 2);
-  if not SongData_GetByte('ROL_PitchBendRange', B) then
-    B := 0;
+  B := 0; // reserved
   F.WriteBuffer(B, 1);
   if not SongData_GetByte('ROL_Melodic', B) then
     B := 0;
@@ -7125,7 +7123,7 @@ type
   end;
   PTickData = ^TTickData;
 var
-  TPB, BPM, BRange: Byte;
+  TPB, BPM: Byte;
   Division, numInst: Word;
   Rhythm: Boolean;
   S: String;
@@ -7150,8 +7148,6 @@ begin
   if not SongData_GetInt('MUS_Percussive', I) then
     I := 1;
   Rhythm := I = 1;
-  if not SongData_GetByte('MUS_PitchBendRange', BRange) then
-    BRange := 1;
   if not SongData_GetWord('MUS_BasicTempo', Division) then
     Division := 120;
   numInst := 0;
@@ -7571,9 +7567,6 @@ begin
   SongData_PutInt('ROL_BeatPerMeasure', BPM);
   SongData_PutInt('ROL_ScaleY', 48);
   SongData_PutInt('ROL_ScaleX', 56);
-  if BRange > 0 then
-    Dec(BRange);
-  SongData_PutInt('ROL_PitchBendRange', BRange);
   SongData_PutInt('ROL_Melodic', Byte(not Rhythm));
   SongData_PutInt('ROL_BasicTempo', Division);
 
