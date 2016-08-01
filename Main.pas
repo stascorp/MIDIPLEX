@@ -542,6 +542,7 @@ type
     procedure Convert_MDI_CMF;
     procedure Convert_ROL_MID;
     procedure Convert_MUS_ROL;
+    procedure Convert_MDI_ROL;
     procedure ConvertTicks(RelToAbs: Boolean; var Data: Array of Command);
     function MergeTracksUsingTicks(Tracks: Array of Integer; EOT: Boolean): Chunk;
     procedure MergeTracksByTicks;
@@ -5886,7 +5887,7 @@ var
   Insts: TList;
   P: PInst;
 begin
-  Log.Lines.Add('[*] Converting AdLib MIDI to AdLib MUS...');
+  Log.Lines.Add('[*] Converting AdLib MDI to AdLib MUS...');
   Application.ProcessMessages;
   if not SongData_GetDWord('InitTempo', InitTempo) then
   begin
@@ -7348,7 +7349,7 @@ begin
               Inc(J);
               TrackData[I].Data[J].Ticks := 0;
             end;
-            TrackData[I].Data[J].Status := $90 or TrackData[I].Data[J + 1].Status and $F;
+            TrackData[I].Data[J].Status := $90 or TrackData[I].Data[J].Status and $F;
             TrackData[I].Data[J].BParm2 := 0;
           end;
           TrackData[I].Data[J].BParm1 := 0;
@@ -7573,6 +7574,539 @@ begin
   if BRange > 0 then
     Dec(BRange);
   SongData_PutInt('ROL_PitchBendRange', BRange);
+  SongData_PutInt('ROL_Melodic', Byte(not Rhythm));
+  SongData_PutInt('ROL_BasicTempo', Division);
+
+  // Write instruments to BNK
+  SongData_PutInt('BNK_Version', 1);
+  SongData_PutStr('BNK_Signature', 'ADLIB-');
+  SongData_PutInt('BNK_Used', Insts.Count);
+  for I := 0 to Insts.Count - 1 do
+  begin
+    Inst := Insts[I];
+    SongData_PutInt('BNK_Idx#'+IntToStr(I), I);
+    SongData_PutInt('BNK_Flags#'+IntToStr(I), 1);
+    SongData_PutStr('BNK_Name#'+IntToStr(I), Inst^.Name);
+    SongData_PutInt('BNK_Perc#'+IntToStr(I), Inst^.Perc);
+    SongData_PutInt('BNK_Chan#'+IntToStr(I), Inst^.Chan);
+    S := '';
+    for J := 0 to (13+13+2) - 1 do
+      S := S + IntToStr(Inst^.Data[J]) + ' ';
+    SongData_PutStr('BNK_Data#'+IntToStr(I), S);
+    Dispose(Inst);
+  end;
+  Insts.Free;
+
+  SongData_PutInt('MIDIType', 1);
+  SongData_PutInt('InitTempo', 60000000 div TPB);
+  SongData_PutInt('Division', Division);
+  SongData_PutInt('SMPTE', 0);
+
+  Log.Lines.Add('[+] Done.');
+end;
+
+procedure TMainForm.Convert_MDI_ROL;
+type
+  TROLInst = record
+    Name: String;
+    Perc,
+    Chan: Byte;
+    Data: Array[0..13+13+2 - 1] of Byte;
+  end;
+  PROLInst = ^TROLInst;
+  TTickData = record
+    Ticks: UInt64;
+    New: UInt64;
+  end;
+  PTickData = ^TTickData;
+var
+  InitTempo: DWord;
+  TPB, BPM: Byte;
+  Division: Word;
+  Rhythm: Boolean;
+  S: String;
+  Insts: TList;
+  Inst: PROLInst;
+  I, J, K, Idx: Integer;
+  L: TStringList;
+  CheckTPB: Array of Byte;
+  Ticks: TList;
+  Tick: PTickData;
+  MinTicksTPB, NewTempo: Word;
+  MinError, Error: Double;
+  MinTick: UInt64;
+  Notes: Array[0..15] of ShortInt;
+  Volumes: Array[0..15] of ShortInt;
+  Fl: Single;
+begin
+  Log.Lines.Add('[*] Converting AdLib MDI to AdLib ROL...');
+  if not SongData_GetDWord('InitTempo', InitTempo) then
+    InitTempo := 500000;
+  TPB := 60000000 div InitTempo;
+  if not SongData_GetWord('Division', Division) then
+    Division := 420;
+  Rhythm := True;
+  Insts := TList.Create;
+
+  I := TrkCh.ItemIndex;
+  if (I >= 0) and (I < Length(TrackData)) then
+  begin
+    // Step 1: Detect rhythm mode
+    for J := 0 to Length(TrackData[I].Data) - 1 do
+      if (TrackData[I].Data[J].Status = $FF)
+      and (TrackData[I].Data[J].BParm1 = $7F)
+      and (Length(TrackData[I].Data[J].DataArray) >= 6)
+      and (TrackData[I].Data[J].DataArray[0] = $00)
+      and (TrackData[I].Data[J].DataArray[1] = $00)
+      and (TrackData[I].Data[J].DataArray[2] = $3F)
+      and (TrackData[I].Data[J].DataArray[3] = 0)
+      and (TrackData[I].Data[J].DataArray[4] = 2) then
+      begin
+        Rhythm := TrackData[I].Data[J].DataArray[5] > 0;
+        Break;
+      end;
+    // Step 2: Detect unique instruments
+    for J := 0 to Length(TrackData[I].Data) - 1 do
+      if (TrackData[I].Data[J].Status = $FF)
+      and (TrackData[I].Data[J].BParm1 = $7F)
+      and (Length(TrackData[I].Data[J].DataArray) >= 6 + 28)
+      and (TrackData[I].Data[J].DataArray[0] = $00)
+      and (TrackData[I].Data[J].DataArray[1] = $00)
+      and (TrackData[I].Data[J].DataArray[2] = $3F)
+      and (TrackData[I].Data[J].DataArray[3] = 0)
+      and (TrackData[I].Data[J].DataArray[4] = 1) then
+      begin
+        Idx := -1;
+        for K := 0 to Insts.Count - 1 do
+        begin
+          Inst := Insts[K];
+          // Compare instrument data
+          if CompareMem(
+            @TrackData[I].Data[J].DataArray[6],
+            @Inst^.Data[0],
+            28
+          ) then begin
+            Idx := K;
+            Break;
+          end;
+        end;
+        if Idx = -1 then
+        begin
+          // Store new instrument
+          New(Inst);
+          if Rhythm and (TrackData[I].Data[J].DataArray[5] >= 6) then
+          begin
+            Inst^.Perc := 1;
+            Inst^.Chan := TrackData[I].Data[J].DataArray[5];
+          end;
+          CopyMemory(@Inst^.Data[0], @TrackData[I].Data[J].DataArray[6], 28);
+          Idx := Insts.Count;
+          Inst^.Name := Format('inst%.4d', [Idx]);
+          Insts.Add(Inst);
+        end;
+        // Update event
+        Inst := Insts[Idx];
+        TrackData[I].Data[J].BParm2 := TrackData[I].Data[J].DataArray[5];
+
+        SetLength(TrackData[I].Data[J].DataArray, 1 + 9 + 1 + 2);
+        TrackData[I].Data[J].Len := Length(TrackData[I].Data[J].DataArray);
+
+        FillChar(TrackData[I].Data[J].DataArray[0], TrackData[I].Data[J].Len, 0);
+        TrackData[I].Data[J].DataArray[0] := 1;
+
+        Move(AnsiString(Inst^.Name)[1], TrackData[I].Data[J].DataArray[1], 8);
+        TrackData[I].Data[J].DataArray[11] := Idx;
+      end;
+    // Step 3.0: Collecting delta ticks information
+    Ticks := TList.Create;
+    for J := 0 to Length(TrackData[I].Data) - 1 do
+      if TrackData[I].Data[J].Ticks > 0 then
+      begin
+        Tick := nil;
+        for K := 0 to Ticks.Count - 1 do
+        begin
+          Tick := Ticks[K];
+          if Tick^.Ticks = TrackData[I].Data[J].Ticks then
+            Break;
+          if Tick^.Ticks > TrackData[I].Data[J].Ticks then
+          begin
+            New(Tick);
+            Tick^.Ticks := TrackData[I].Data[J].Ticks;
+            Ticks.Insert(K, Tick);
+            Break;
+          end;
+          Tick := nil;
+        end;
+        if Tick = nil then
+        begin
+          New(Tick);
+          Tick^.Ticks := TrackData[I].Data[J].Ticks;
+          Ticks.Add(Tick);
+        end;
+      end;
+    // Step 3.1: Optimize ticks with basic tempo
+    if (Ticks.Count > 0) and (
+      (Division > 220)
+      or (TPB mod PTickData(Ticks[0])^.Ticks > 0)
+    )
+    then begin
+      SetLength(CheckTPB, 8);
+      // Probe TPBs by priority
+      CheckTPB[0] := 4;
+      CheckTPB[1] := 3;
+      CheckTPB[2] := 2;
+      CheckTPB[3] := 5;
+      CheckTPB[4] := 6;
+      CheckTPB[5] := 8;
+      CheckTPB[6] := 10;
+      CheckTPB[7] := 12;
+      for J := 0 to Length(CheckTPB) - 1 do
+      begin
+        // Minimum delta ticks with selected TPB
+        MinTicksTPB := TPB div CheckTPB[J];
+        Tick := Ticks[0];
+        // Supposed basic tempo
+        NewTempo := Round(Division * MinTicksTPB / Tick^.Ticks);
+        // Error correction
+        if NewTempo mod 5 = 4 then Inc(NewTempo);
+        if NewTempo mod 5 = 1 then Dec(NewTempo);
+        // Is calculated basic tempo optimal?
+        if (NewTempo < 90)
+        or (NewTempo > 220)
+        or (NewTempo mod 5 > 0) then
+          CheckTPB[J] := 0; // don't use it
+      end;
+      Idx := -1;
+      MinError := 9000;
+      // Calculate TPB with minimal error
+      for J := 0 to Length(CheckTPB) - 1 do
+      begin
+        if CheckTPB[J] = 0 then
+          Continue;
+        MinTicksTPB := TPB div CheckTPB[J];
+        Tick := Ticks[0];
+        NewTempo := Round(Division * MinTicksTPB / Tick^.Ticks);
+        if NewTempo mod 5 = 4 then Inc(NewTempo);
+        if NewTempo mod 5 = 1 then Dec(NewTempo);
+        // Calculate error sum for selected TPB
+        Error := 0;
+        for K := 0 to Ticks.Count - 1 do
+        begin
+          Tick := Ticks[0];
+          MinTick := Tick^.Ticks;
+          Tick := Ticks[K];
+          Error := Error + Abs(MinTicksTPB * Round(Tick^.Ticks / MinTick) - (Tick^.Ticks * NewTempo / Division));
+        end;
+        if Error < MinError then
+        begin
+          MinError := Error;
+          Idx := J;
+        end;
+      end;
+      if Idx > -1 then
+      begin // Optimal Tempo found, convert ticks
+        MinTicksTPB := TPB div CheckTPB[Idx];
+        Tick := Ticks[0];
+        // Update basic tempo
+        Division := Round(Division * MinTicksTPB / Tick^.Ticks);
+        if Division mod 5 = 4 then Inc(Division);
+        if Division mod 5 = 1 then Dec(Division);
+        // Update ticks reference
+        MinTick := Tick^.Ticks;
+        for J := 0 to Ticks.Count - 1 do
+        begin
+          Tick := Ticks[J];
+          Tick^.Ticks := MinTicksTPB * Round(Tick^.Ticks / MinTick);
+        end;
+        // Update delta ticks
+        for J := 0 to Length(TrackData[I].Data) - 1 do
+          if TrackData[I].Data[J].Ticks > 0 then
+            TrackData[I].Data[J].Ticks :=
+            MinTicksTPB * Round(TrackData[I].Data[J].Ticks / MinTick);
+      end;
+    end;
+    // Step 3.2: Optimize ticks per beat
+    if (Ticks.Count > 0) and (TPB > 12)
+    and (TPB mod PTickData(Ticks[0])^.Ticks = 0) then
+    begin
+      Tick := Ticks[0];
+      MinTick := Tick^.Ticks;
+      // Update ticks per beat
+      TPB := TPB div MinTick;
+      // Update ticks reference
+      for J := 0 to Ticks.Count - 1 do
+      begin
+        Tick := Ticks[J];
+        Tick^.Ticks := Tick^.Ticks div MinTick;
+      end;
+      // Update delta ticks
+      for J := 0 to Length(TrackData[I].Data) - 1 do
+        if TrackData[I].Data[J].Ticks > 0 then
+          TrackData[I].Data[J].Ticks :=
+          TrackData[I].Data[J].Ticks div MinTick;
+    end;
+    // Step 3.3: Free the references
+    for J := 0 to Ticks.Count - 1 do
+    begin
+      Tick := Ticks[J];
+      Dispose(Tick);
+    end;
+    Ticks.Free;
+    // Step 4: Insert omitted volume changes
+    J := 0;
+    FillChar(Notes, SizeOf(Notes), 0);
+    FillChar(Volumes, SizeOf(Volumes), -1);
+    while J < Length(TrackData[I].Data) do
+    begin
+      case TrackData[I].Data[J].Status shr 4 of
+        8: // Note Off
+        begin
+          if TrackData[I].Data[J].BParm2 > 0 then
+          begin
+            if Volumes[TrackData[I].Data[J].Status and $F] <> ShortInt(TrackData[I].Data[J].BParm2) then
+            begin
+              Volumes[TrackData[I].Data[J].Status and $F] := TrackData[I].Data[J].BParm2;
+              NewEvent(I, J, $D0, 0);
+              TrackData[I].Data[J].Ticks := TrackData[I].Data[J + 1].Ticks;
+              TrackData[I].Data[J].Status := $D0 or TrackData[I].Data[J + 1].Status and $F;
+              TrackData[I].Data[J].BParm1 := Volumes[TrackData[I].Data[J].Status and $F];
+              TrackData[I].Data[J].BParm2 := 0;
+              Inc(J);
+              TrackData[I].Data[J].Ticks := 0;
+            end;
+            TrackData[I].Data[J].BParm2 := 0;
+          end;
+          TrackData[I].Data[J].Status := $90 or TrackData[I].Data[J].Status and $F;
+          TrackData[I].Data[J].BParm1 := 0;
+          if Notes[TrackData[I].Data[J].Status and $F] = 0 then
+          begin
+            // Remove excess
+            DelEvent(I, J, True);
+            Continue;
+          end;
+          Notes[TrackData[I].Data[J].Status and $F] := 0;
+        end;
+        9: // Note On
+        begin
+          if TrackData[I].Data[J].BParm2 > 0 then
+          begin
+            if Volumes[TrackData[I].Data[J].Status and $F] <> ShortInt(TrackData[I].Data[J].BParm2) then
+            begin
+              Volumes[TrackData[I].Data[J].Status and $F] := TrackData[I].Data[J].BParm2;
+              NewEvent(I, J, $D0, 0);
+              TrackData[I].Data[J].Ticks := TrackData[I].Data[J + 1].Ticks;
+              TrackData[I].Data[J].Status := $D0 or TrackData[I].Data[J + 1].Status and $F;
+              TrackData[I].Data[J].BParm1 := Volumes[TrackData[I].Data[J].Status and $F];
+              TrackData[I].Data[J].BParm2 := 0;
+              Inc(J);
+              TrackData[I].Data[J].Ticks := 0;
+            end;
+            TrackData[I].Data[J].BParm2 := 127;
+            Notes[TrackData[I].Data[J].Status and $F] := 1;
+          end
+          else
+          begin
+            TrackData[I].Data[J].BParm1 := 0;
+            if Notes[TrackData[I].Data[J].Status and $F] = 0 then
+            begin
+              // Remove excess
+              DelEvent(I, J, True);
+              Continue;
+            end;
+            Notes[TrackData[I].Data[J].Status and $F] := 0;
+          end;
+        end;
+        13: // Volume Change
+        begin
+          if Volumes[TrackData[I].Data[J].Status and $F] = ShortInt(TrackData[I].Data[J].BParm1) then
+          begin // Remove excess
+            DelEvent(I, J, True);
+            Continue;
+          end
+          else
+            Volumes[TrackData[I].Data[J].Status and $F] := ShortInt(TrackData[I].Data[J].BParm1);
+        end;
+      end;
+      Inc(J);
+    end;
+    // Step 5: Convert events
+    J := 0;
+    while J < Length(TrackData[I].Data) do
+    begin
+      case TrackData[I].Data[J].Status shr 4 of
+        13: // Volume Change
+        begin
+          Fl := TrackData[I].Data[J].BParm1 / 127;
+          TrackData[I].Data[J].BParm2 := TrackData[I].Data[J].Status and $F;
+          TrackData[I].Data[J].Status := $FF;
+          TrackData[I].Data[J].BParm1 := $7F;
+
+          SetLength(TrackData[I].Data[J].DataArray, 5);
+          TrackData[I].Data[J].Len := Length(TrackData[I].Data[J].DataArray);
+
+          TrackData[I].Data[J].DataArray[0] := 2;
+          Move(Fl, TrackData[I].Data[J].DataArray[1], 4);
+        end;
+        14: // Pitch Bend
+        begin
+          Fl := TrackData[I].Data[J].Value / 8192;
+          TrackData[I].Data[J].BParm2 := TrackData[I].Data[J].Status and $F;
+          TrackData[I].Data[J].Status := $FF;
+          TrackData[I].Data[J].BParm1 := $7F;
+
+          SetLength(TrackData[I].Data[J].DataArray, 5);
+          TrackData[I].Data[J].Len := Length(TrackData[I].Data[J].DataArray);
+
+          TrackData[I].Data[J].DataArray[0] := 3;
+          Move(Fl, TrackData[I].Data[J].DataArray[1], 4);
+        end;
+        15: // System Event
+        begin
+          if TrackData[I].Data[J].Status = $FF then
+          begin
+            case TrackData[I].Data[J].BParm1 of
+              $51: // Tempo
+              begin
+                TrackData[I].Data[J].Status := $FF;
+                TrackData[I].Data[J].BParm1 := $7F;
+                if TrackData[I].Data[J].Value > 0 then
+                  Fl := InitTempo / TrackData[I].Data[J].Value
+                else
+                  Fl := 1;
+
+                SetLength(TrackData[I].Data[J].DataArray, 5);
+                TrackData[I].Data[J].Len := Length(TrackData[I].Data[J].DataArray);
+
+                TrackData[I].Data[J].DataArray[0] := 0;
+                Move(Fl, TrackData[I].Data[J].DataArray[1], 4);
+              end;
+              $7F: // Sequencer Specific
+              begin
+                if (Length(TrackData[I].Data[J].DataArray) >= 6)
+                and (TrackData[I].Data[J].DataArray[0] = $00)
+                and (TrackData[I].Data[J].DataArray[1] = $00)
+                and (TrackData[I].Data[J].DataArray[2] = $3F) then
+                begin
+                  DelEvent(I, J, True);
+                  Continue;
+                end;
+              end;
+              else
+              begin
+                DelEvent(I, J, True);
+                Continue;
+              end;
+            end;
+          end
+          else
+          begin
+            DelEvent(I, J, True);
+            Continue;
+          end;
+        end;
+      end;
+      Inc(J);
+    end;
+    // Step 6: Split track by channels
+    Idx := I;
+    ConvertTicks(True, TrackData[Idx].Data);
+    // Add tempo track
+    SetLength(TrackData, Length(TrackData) + 1);
+    I := High(TrackData);
+    TrackData[I].Title := 'Tempo';
+    SetLength(TrackData[I].Data, 0);
+    // Add ROL channel tracks
+    for J := 0 to 10 do
+    begin
+      SetLength(TrackData, Length(TrackData) + 1);
+      I := High(TrackData);
+      TrackData[I].Title := AnsiString(Format('Voix %2d', [J]));
+      SetLength(TrackData[I].Data, 0);
+
+      SetLength(TrackData, Length(TrackData) + 1);
+      I := High(TrackData);
+      TrackData[I].Title := AnsiString(Format('Timbre %2d', [J]));
+      SetLength(TrackData[I].Data, 0);
+
+      SetLength(TrackData, Length(TrackData) + 1);
+      I := High(TrackData);
+      TrackData[I].Title := AnsiString(Format('Volume %2d', [J]));
+      SetLength(TrackData[I].Data, 0);
+
+      SetLength(TrackData, Length(TrackData) + 1);
+      I := High(TrackData);
+      TrackData[I].Title := AnsiString(Format('Pitch %2d', [J]));
+      SetLength(TrackData[I].Data, 0);
+    end;
+    // Move events
+    for J := 0 to Length(TrackData[Idx].Data) - 1 do
+      case TrackData[Idx].Data[J].Status shr 4 of
+        9: // Voix
+        begin
+          I := (TrackData[Idx].Data[J].Status and $F) * 4 + 1;
+          I := I + (Length(TrackData) - 45);
+          SetLength(TrackData[I].Data, Length(TrackData[I].Data) + 1);
+          TrackData[I].Data[High(TrackData[I].Data)] := TrackData[Idx].Data[J];
+        end;
+        15:
+        begin
+          case TrackData[Idx].Data[J].DataArray[0] of
+            0: // Tempo
+              I := Length(TrackData) - 45;
+            1: // Timbre
+            begin
+              I := (TrackData[Idx].Data[J].BParm2 and $F) * 4 + 2;
+              I := I + (Length(TrackData) - 45);
+              TrackData[Idx].Data[J].BParm2 := 0;
+            end;
+            2: // Volume
+            begin
+              I := (TrackData[Idx].Data[J].BParm2 and $F) * 4 + 3;
+              I := I + (Length(TrackData) - 45);
+              TrackData[Idx].Data[J].BParm2 := 0;
+            end;
+            3: // Pitch
+            begin
+              I := (TrackData[Idx].Data[J].BParm2 and $F) * 4 + 4;
+              I := I + (Length(TrackData) - 45);
+              TrackData[Idx].Data[J].BParm2 := 0;
+            end;
+          end;
+          SetLength(TrackData[I].Data, Length(TrackData[I].Data) + 1);
+          TrackData[I].Data[High(TrackData[I].Data)] := TrackData[Idx].Data[J];
+        end;
+      end;
+    for I := High(TrackData) downto High(TrackData) - 44 do
+      ConvertTicks(False, TrackData[I].Data);
+    // Delete old track
+    DelTrack(Idx);
+    // Step 7: Delete unnecessary Note Offs
+    for K := 0 to 10 do
+    begin
+      I := (Length(TrackData) - 45) + K * 4 + 1;
+      J := 0;
+      while J < Length(TrackData[I].Data) - 1 do
+      begin
+        if (TrackData[I].Data[J].BParm1 = 0)
+        and (TrackData[I].Data[J + 1].BParm1 > 0)
+        and (TrackData[I].Data[J + 1].Ticks = 0) then
+        begin
+          DelEvent(I, J, True);
+          Continue;
+        end;
+        Inc(J);
+      end;
+    end;
+  end;
+
+  SongData.Strings.Clear;
+
+  SongData_PutInt('ROL_Version', 262144);
+  SongData_PutStr('ROL_Signature', '\roll\default');
+  SongData_PutInt('ROL_TicksPerBeat', TPB);
+  SongData_PutInt('ROL_BeatPerMeasure', 4);
+  SongData_PutInt('ROL_ScaleY', 48);
+  SongData_PutInt('ROL_ScaleX', 56);
   SongData_PutInt('ROL_Melodic', Byte(not Rhythm));
   SongData_PutInt('ROL_BasicTempo', Division);
 
@@ -11253,6 +11787,11 @@ begin
       Convert_MDI_MID;
       EventProfile := 'mid';
       EventViewProfile := 'mid';
+    end;
+    if DestProfile = 'rol' then begin
+      Convert_MDI_ROL;
+      EventProfile := 'rol';
+      EventViewProfile := 'rol';
     end;
     if DestProfile = 'mus' then begin
       Convert_MDI_MUS;
