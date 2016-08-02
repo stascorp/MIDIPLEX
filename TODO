@@ -2,5 +2,4 @@
 2. Replace events
 3. Support for Cryo HERAD, V2M, MUS/DMX (also investigate: HMP, HMI, Midi-Editor MIA, MusyX SON, Star 3 MIDI ST3)
 4. Refactor playback feature
-4.1. Rewrite MIDIPlayer with proper callback procedure (don't use NtDelayExecution, make timer with correct frequency)
-4.2. Disable player buttons to represent current state
+4.1. Disable player buttons to represent current state

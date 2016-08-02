@@ -23,13 +23,6 @@ type
     Release, Build: Word;
     bDebug, bPrerelease, bPrivate, bSpecial: Boolean;
   end;
-  TPlayerInfo = record
-    TrackID, TrackPos: Integer;
-    Notify: Boolean;
-    MSec: Int64;
-    Send: Boolean;
-    Cmd: DWORD;
-  end;
   Command = record
     Ticks: UInt64;
     Status: Byte;
@@ -39,7 +32,6 @@ type
     DataArray: Array of Byte;
     DataString: AnsiString;
     RunStatMode: Boolean;
-    PlayerInfo: TPlayerInfo;
   end;
   Chunk = record
     Title: AnsiString;
@@ -584,9 +576,7 @@ var
   MIDIOut: HMIDIOUT;
   MIDIThr: THandle;
   MIDIThrId: Cardinal;
-  PlayData: Array of Command;
   LoopEnabled: Boolean = False;
-  LoopPoint, LoopEnd: Integer;
   // Visual
   vFS: TFormatSettings;
   vChangeEvent: Boolean = False;
@@ -9389,69 +9379,327 @@ begin
     VU[Msg.WParam] := Msg.LParam;
 end;
 
-procedure NtDelayExecution(Alertable:boolean;Interval:PInt64); stdcall; external 'ntdll.dll';
-
 procedure MIDIPlayer; stdcall;
 label
-  stop;
+  play, loop, stop;
 var
-  I, Idx: Integer;
-  Buf: Array of Byte;
-  MIDIData: MIDIHDR;
-  Ver: Word;
-begin
-  Idx := -1;
-  I := 0;
-  if not SongData_GetWord('MIDIType', Ver) then
-    goto stop;
-  while I < Length(PlayData) do begin
-    if MIDIThrId = 0 then
-      Break;
-    if (Ver <> 1) and (Idx <> PlayData[I].PlayerInfo.TrackID) then begin
-      Idx := PlayData[I].PlayerInfo.TrackID;
-      PostMessage(MainForm.Handle, WM_TRACKIDX, Idx, 0);
+  Ver, Division: Word;
+  InitTempo, Tempo: Cardinal;
+  UseTempo: Boolean;
+  SecDelay: Double;
+  lpFrequency,
+  lpPerfomanceCount,
+  lpPerfomanceCountOld: Int64;
+  TickCounter, LoopStartTick: UInt64;
+  LoopStartTrack: Integer;
+  Data: Array of Array of Command;
+  DPos: Array of Integer;
+  I, J, Idx: Integer;
+  NoEvents, LoopReq: Boolean;
+
+  function PlaySysEx(B: Array of Byte): Boolean;
+  var
+    Buf: Array of Byte;
+    MIDIData: MIDIHDR;
+  begin
+    Result := True;
+    if B[Length(B) - 1] = $F7 then
+    begin
+      SetLength(Buf, Length(B) + 1);
+      Buf[0] := $F0;
+      Move(B[0], Buf[1], Length(B));
+    end
+    else
+    begin
+      SetLength(Buf, Length(B) + 2);
+      Buf[0] := $F0;
+      Move(B[0], Buf[1], Length(B));
+      Buf[Length(Buf) - 1] := $F7;
     end;
-    if PlayData[I].PlayerInfo.Notify then
-      PostMessage(MainForm.Handle, WM_EVENTIDX,
-      PlayData[I].PlayerInfo.TrackPos, PlayData[I].PlayerInfo.TrackID);
-    if PlayData[I].Ticks > 0 then begin
-      timeBeginPeriod(1);
-      NtDelayExecution(false, @PlayData[I].PlayerInfo.MSec);
-      timeEndPeriod(1);
-    end;
-    if LoopEnabled and ((I = LoopEnd) or (I = Length(PlayData) - 1)) then
-      I := LoopPoint;
-    if PlayData[I].PlayerInfo.Send then begin
-      if midiOutShortMsg(MIDIOut, PlayData[I].PlayerInfo.Cmd) <> MMSYSERR_NOERROR then
-        Break;
-      if PlayData[I].Status shr 4 = 9 then begin
-        PostMessage(MainForm.Handle, WM_SETVU, PlayData[I].Status and $F, PlayData[I].BParm2);
+    FillChar(MIDIData, SizeOf(MIDIData), 0);
+    MIDIData.lpData := @Buf[0];
+    MIDIData.dwBufferLength := Length(Buf);
+    MIDIData.dwBytesRecorded := Length(Buf);
+    if midiOutPrepareHeader(MIDIOut, @MIDIData, SizeOf(MIDIData)) <> MMSYSERR_NOERROR then
+      Result := False;
+    if Result then
+      if midiOutLongMsg(MIDIOut, @MIDIData, SizeOf(MIDIData)) <> MMSYSERR_NOERROR then
+        Result := False;
+  end;
+  function PlayEvent(Trk: Integer; E: Command): Boolean;
+  var
+    dwMsg: DWord;
+  begin
+    Result := True;
+    dwMsg := 0;
+    if E.Status shr 4 < $F then
+    begin
+      case E.Status shr 4 of
+        $8, $9, $A, $B, $E:
+          dwMsg := E.Status or (E.BParm1 shl 8) or (E.BParm2 shl 16);
+        $C, $D:
+          dwMsg := E.Status or (E.BParm1 shl 8);
       end;
-    end else
-      if ((PlayData[I].Status = $F0)
-      or ((PlayData[I].Status = $FF) and (PlayData[I].BParm1 = $7F)))
-      and (Length(PlayData[I].DataArray) > 0)
-      then begin
-        if PlayData[I].DataArray[Length(PlayData[I].DataArray) - 1] = $F7 then begin
-          SetLength(Buf, Length(PlayData[I].DataArray) + 1);
-          Buf[0] := $F0;
-          Move(PlayData[I].DataArray[0], Buf[1], Length(PlayData[I].DataArray));
-        end else begin
-          SetLength(Buf, Length(PlayData[I].DataArray) + 2);
-          Buf[0] := $F0;
-          Move(PlayData[I].DataArray[0], Buf[1], Length(PlayData[I].DataArray));
-          Buf[Length(Buf) - 1] := $F7;
+      if midiOutShortMsg(MIDIOut, dwMsg) <> MMSYSERR_NOERROR then
+        Result := False;
+
+      // Set VU Meters
+      if E.Status shr 4 = 9 then
+        PostMessage(MainForm.Handle, WM_SETVU, E.Status and $F, E.BParm2);
+
+      // Detect loop start
+      if (E.Status shr 4 = $B)
+      and (E.BParm1 = $74)
+      and (E.BParm2 = $00)
+      then // Loop Start (XMI)
+      begin
+        LoopStartTick := E.Ticks;
+        LoopStartTrack := Trk;
+      end;
+      if (E.Status shr 4 = $B)
+      and (E.BParm1 = $76)
+      and (E.BParm2 = $00)
+      then // Loop Point Start
+      begin
+        LoopStartTick := E.Ticks;
+        LoopStartTrack := Trk;
+      end;
+
+      // Detect loop end
+      if (E.Status shr 4 = $B)
+      and (E.BParm1 = $75)
+      and (E.BParm2 = $7F)
+      then // Loop End (XMI)
+        LoopReq := True;
+      if (E.Status shr 4 = $B)
+      and (E.BParm1 = $76)
+      and (E.BParm2 = $7F)
+      then // Loop Point End
+        LoopReq := True;
+    end
+    else
+    begin
+      case E.Status of
+        $F0: // System Exclusive
+        begin
+          if Length(E.DataArray) > 0 then
+            Result := PlaySysEx(E.DataArray);
+          if (EventProfile = 'mus')
+          and (E.Len = 5)
+          and (E.DataArray[0] = $7F) then
+          begin
+            // AdLib MUS -> Set Speed
+            if ((E.DataArray[3] / 128) +
+            E.DataArray[2]) <> 0 then
+              Tempo :=
+              Round(InitTempo / ((E.DataArray[3] / 128) + E.DataArray[2]))
+            else
+              Tempo := InitTempo;
+            SecDelay := Tempo / Division / 1000000;
+          end;
         end;
-        FillChar(MIDIData, SizeOf(MIDIData), 0);
-        MIDIData.lpData := @Buf[0];
-        MIDIData.dwBufferLength := Length(Buf);
-        MIDIData.dwBytesRecorded := Length(Buf);
-        if midiOutPrepareHeader(MIDIOut, @MIDIData, SizeOf(MIDIData)) <> MMSYSERR_NOERROR then
+        $FF: // Meta Event
+          case E.BParm1 of
+            $51: // Change Tempo
+            begin
+              if UseTempo then
+              begin
+                Tempo := E.Value;
+                SecDelay := Tempo / Division / 1000000;
+              end;
+            end;
+            $7F: // Sequencer Specific (process the same as SysEx)
+            begin
+              if Length(E.DataArray) > 0 then
+                Result := PlaySysEx(E.DataArray);
+              if (EventProfile = 'rol')
+              and (E.Len = 5)
+              and (E.DataArray[0] = 0) then
+              begin
+                // AdLib ROL -> Set Tempo
+                Tempo := Round(InitTempo / PSingle(@E.DataArray[1])^);
+                SecDelay := Tempo / Division / 1000000;
+              end;
+            end;
+          end;
+      end;
+    end;
+  end;
+begin
+  if not SongData_GetWord('MIDIType', Ver) then
+    Ver := 1;
+  if not SongData_GetDWord('InitTempo', InitTempo) then
+    InitTempo := 500000;
+  if not SongData_GetWord('Division', Division) then
+    Division := 96;
+
+  if Length(TrackData) = 0 then
+    goto stop;
+
+  Idx := MainForm.TrkCh.ItemIndex;
+
+  SetLength(Data, Length(TrackData));
+  SetLength(DPos, Length(Data));
+  for I := 0 to Length(Data) - 1 do
+  begin
+    SetLength(Data[I], Length(TrackData[I].Data));
+    for J := 0 to Length(Data[I]) - 1 do
+      Data[I][J] := TrackData[I].Data[J];
+    MainForm.ConvertTicks(True, Data[I]);
+    DPos[I] := 0;
+  end;
+
+  Tempo := InitTempo;
+  SecDelay := Tempo / Division / 1000000;
+  UseTempo := EventProfile <> 'xmi';
+
+  if not QueryPerformanceFrequency(lpFrequency) then
+    goto stop; // QueryPerformanceFrequency failed
+
+  I := 0;
+  LoopReq := False;
+  LoopStartTick := 0;
+  LoopStartTrack := I;
+  case Ver of
+    0:
+    begin
+      I := Idx;
+      if (I < 0) or (I >= Length(Data)) then
+        I := 0;
+      LoopStartTrack := I;
+      PostMessage(MainForm.Handle, WM_TRACKIDX, I, 0);
+    end;
+    2:
+      PostMessage(MainForm.Handle, WM_TRACKIDX, I, 0);
+  end;
+  TickCounter := 0;
+play:
+  while MIDIThrId > 0 do
+  begin
+    if not QueryPerformanceCounter(lpPerfomanceCountOld) then
+      goto stop; // QueryPerformanceCounter failed
+    case Ver of
+      0: // MIDI Type-0
+      begin
+        if DPos[I] >= Length(Data[I]) then
           Break;
-        if midiOutLongMsg(MIDIOut, @MIDIData, SizeOf(MIDIData)) <> MMSYSERR_NOERROR then
+        while (DPos[I] < Length(Data[I]))
+        and (Data[I][DPos[I]].Ticks <= TickCounter) do
+        begin
+          if not PlayEvent(I, Data[I][DPos[I]]) then
+            goto stop;
+          if (DPos[I] = 0)
+          or (Data[I][DPos[I]].Ticks > Data[I][DPos[I] - 1].Ticks) then
+            PostMessage(MainForm.Handle, WM_EVENTIDX, DPos[I], I);
+          if LoopReq and LoopEnabled then
+            goto loop;
+          Inc(DPos[I]);
+        end;
+      end;
+      1: // MIDI Type-1
+      begin
+        NoEvents := True;
+        for I := 0 to Length(Data) - 1 do
+        begin
+          if DPos[I] < Length(Data[I]) then
+            NoEvents := False;
+          while (DPos[I] < Length(Data[I]))
+          and (Data[I][DPos[I]].Ticks <= TickCounter) do
+          begin
+            if not PlayEvent(I, Data[I][DPos[I]]) then
+              goto stop;
+            if (DPos[I] = 0)
+            or (Data[I][DPos[I]].Ticks > Data[I][DPos[I] - 1].Ticks) then
+              PostMessage(MainForm.Handle, WM_EVENTIDX, DPos[I], I);
+            if LoopReq and LoopEnabled then
+              goto loop;
+            Inc(DPos[I]);
+          end;
+        end;
+        I := 0;
+        if NoEvents then
           Break;
       end;
-    Inc(I);
+      2: // MIDI Type-2
+      begin
+        NoEvents := False;
+        while DPos[I] >= Length(Data[I]) do
+        begin
+          Inc(I);
+          if I >= Length(Data) then
+          begin
+            NoEvents := True;
+            Break;
+          end
+          else
+          begin
+            DPos[I] := 0;
+            if DPos[I] < Length(Data[I]) then
+              PostMessage(MainForm.Handle, WM_TRACKIDX, I, 0);
+          end;
+        end;
+        if NoEvents then
+          Break;
+        while (DPos[I] < Length(Data[I]))
+        and (Data[I][DPos[I]].Ticks <= TickCounter) do
+        begin
+          if not PlayEvent(I, Data[I][DPos[I]]) then
+            goto stop;
+          if (DPos[I] = 0)
+          or (Data[I][DPos[I]].Ticks > Data[I][DPos[I] - 1].Ticks) then
+            PostMessage(MainForm.Handle, WM_EVENTIDX, DPos[I], I);
+          if LoopReq and LoopEnabled then
+            goto loop;
+          Inc(DPos[I]);
+        end;
+      end;
+    end;
+    repeat
+      if not QueryPerformanceCounter(lpPerfomanceCount) then
+        goto stop; // QueryPerformanceCounter failed
+    until lpPerfomanceCount - lpPerfomanceCountOld >= lpFrequency * SecDelay;
+    Inc(TickCounter);
+  end;
+loop:
+  if (MIDIThrId > 0) and LoopEnabled then
+  begin
+    LoopReq := False;
+    I := 0;
+    case Ver of
+      0:
+      begin
+        I := Idx;
+        J := 0;
+        while (J < Length(Data[I]))
+        and (Data[I][J].Ticks < LoopStartTick) do
+          Inc(J);
+        DPos[I] := J;
+      end;
+      1:
+      begin
+        for I := 0 to Length(DPos) - 1 do
+        begin
+          J := 0;
+          while (J < Length(Data[I]))
+          and (Data[I][J].Ticks < LoopStartTick) do
+            Inc(J);
+          DPos[I] := J;
+        end;
+        I := 0;
+      end;
+      2:
+      begin
+        I := LoopStartTrack;
+        J := 0;
+        while (J < Length(Data[I]))
+        and (Data[I][J].Ticks < LoopStartTick) do
+          Inc(J);
+        DPos[I] := J;
+        PostMessage(MainForm.Handle, WM_TRACKIDX, I, 0);
+      end;
+    end;
+    TickCounter := LoopStartTick;
+    goto play;
   end;
 stop:
   midiOutClose(MIDIOut);
@@ -9464,345 +9712,6 @@ var
   NewMIDIOut: THandle;
   Ver, Division: Word;
   InitTempo: Cardinal;
-  UseTempo: Boolean;
-  Tempo, MSPT: Cardinal;
-
-  procedure MixType0;
-  var
-    I: Integer;
-  begin
-    SetLength(PlayData, Length(TrackData[0].Data));
-    for I := 0 to Length(PlayData) - 1 do begin
-      PlayData[I] := TrackData[0].Data[I];
-      PlayData[I].PlayerInfo.TrackID := 0;
-      PlayData[I].PlayerInfo.TrackPos := I;
-      PlayData[I].PlayerInfo.Notify := PlayData[I].Ticks > 0;
-      PlayData[I].PlayerInfo.MSec := -10 * PlayData[I].Ticks * MSPT;
-
-      // Loop Start (XMI)
-      if (PlayData[I].Status shr 4 = 11)
-      and (PlayData[I].BParm1 = $74)
-      and (PlayData[I].BParm2 = $00)
-      then
-        LoopPoint := I;
-      // Loop End (XMI)
-      if (PlayData[I].Status shr 4 = 11)
-      and (PlayData[I].BParm1 = $75)
-      and (PlayData[I].BParm2 = $7F)
-      then
-        LoopEnd := I;
-      // Loop Point Start
-      if (PlayData[I].Status shr 4 = 11)
-      and (PlayData[I].BParm1 = $76)
-      and (PlayData[I].BParm2 = $00)
-      then
-        LoopPoint := I;
-      // Loop Point End
-      if (PlayData[I].Status shr 4 = 11)
-      and (PlayData[I].BParm1 = $76)
-      and (PlayData[I].BParm2 = $7F)
-      then
-        LoopEnd := I;
-      case PlayData[I].Status shr 4 of
-        8, 9, 10, 11, 14: begin
-          PlayData[I].PlayerInfo.Send := True;
-          PlayData[I].PlayerInfo.Cmd :=
-          PlayData[I].Status
-          or (PlayData[I].BParm1 shl 8)
-          or (PlayData[I].BParm2 shl 16);
-        end;
-        12, 13: begin
-          PlayData[I].PlayerInfo.Send := True;
-          PlayData[I].PlayerInfo.Cmd :=
-          PlayData[I].Status
-          or (PlayData[I].BParm1 shl 8);
-        end;
-        15: begin
-          PlayData[I].PlayerInfo.Send := False;
-          // System
-          case PlayData[I].Status and 15 of
-            // Meta Event
-            15: begin
-              case PlayData[I].BParm1 of
-                // Tempo
-                81: begin
-                  if UseTempo then begin
-                    Tempo := PlayData[I].Value;
-                    MSPT := Round(Tempo / Division);
-                  end;
-                end;
-              end;
-            end;
-          end;
-          if EventProfile = 'rol' then begin
-            if (PlayData[I].Status = $FF)
-            and (PlayData[I].BParm1 = $7F)
-            and (PlayData[I].Len = 5)
-            and (PlayData[I].DataArray[0] = 0) then begin
-              // Set Tempo
-              Tempo := Round(InitTempo / PSingle(@PlayData[I].DataArray[1])^);
-              MSPT := Round(Tempo / Division);
-            end;
-          end;
-          if EventProfile = 'mus' then begin
-            if (PlayData[I].Status = $F0)
-            and (PlayData[I].Len = 5)
-            and (PlayData[I].DataArray[0] = $7F) then begin
-              // Set Speed
-              if ((PlayData[I].DataArray[3] / 128) +
-              PlayData[I].DataArray[2]) <> 0 then
-                Tempo :=
-                Round(InitTempo / ((PlayData[I].DataArray[3] / 128) + PlayData[I].DataArray[2]))
-              else
-                Tempo := InitTempo;
-              MSPT := Round(Tempo / Division);
-            end;
-          end;
-        end;
-      end;
-
-    end;
-    if Length(PlayData) > 0 then
-      PlayData[0].PlayerInfo.Notify := True;
-  end;
-
-  procedure MixType1;
-  var
-    I, Idx: Integer;
-    MinTick, Tick: UInt64;
-    Positions: Array of UInt64;
-    function GetTick(Idx: Integer; var Tick: UInt64): Boolean;
-    begin
-      Result := False;
-      if Positions[Idx] >= Length(TrackData[Idx].Data) then
-        Exit;
-      Tick := TrackData[Idx].Data[Positions[Idx]].Ticks;
-      Result := True;
-    end;
-  begin
-    SetLength(Positions, Length(TrackData));
-    for I := 0 to Length(Positions) - 1 do
-      Positions[I] := 0;
-    for I := 0 to Length(TrackData) - 1 do
-      ConvertTicks(True, TrackData[I].Data);
-    while True do begin
-      Idx := -1;
-      MinTick := High(UInt64);
-      for I := 0 to Length(TrackData) - 1 do
-        if GetTick(I, Tick) then
-          if (Idx = -1) or (Tick < MinTick) then begin
-            MinTick := Tick;
-            Idx := I;
-          end;
-      if Idx = -1 then
-        Break;
-      SetLength(PlayData, Length(PlayData) + 1);
-      PlayData[Length(PlayData) - 1] := TrackData[Idx].Data[Positions[Idx]];
-      PlayData[Length(PlayData) - 1].PlayerInfo.TrackID := Idx;
-      PlayData[Length(PlayData) - 1].PlayerInfo.TrackPos := Positions[Idx];
-
-      case PlayData[Length(PlayData) - 1].Status shr 4 of
-        8, 9, 10, 11, 14: begin
-          PlayData[Length(PlayData) - 1].PlayerInfo.Send := True;
-          PlayData[Length(PlayData) - 1].PlayerInfo.Cmd :=
-          PlayData[Length(PlayData) - 1].Status
-          or (PlayData[Length(PlayData) - 1].BParm1 shl 8)
-          or (PlayData[Length(PlayData) - 1].BParm2 shl 16);
-        end;
-        12, 13: begin
-          PlayData[Length(PlayData) - 1].PlayerInfo.Send := True;
-          PlayData[Length(PlayData) - 1].PlayerInfo.Cmd :=
-          PlayData[Length(PlayData) - 1].Status
-          or (PlayData[Length(PlayData) - 1].BParm1 shl 8);
-        end;
-      end;
-
-      Inc(Positions[Idx]);
-    end;
-    for I := 0 to Length(TrackData) - 1 do
-      ConvertTicks(False, TrackData[I].Data);
-    ConvertTicks(False, PlayData);
-
-    for I := 0 to Length(PlayData) - 1 do begin
-      PlayData[I].PlayerInfo.Notify := (PlayData[I].PlayerInfo.TrackPos = 0)
-      or (TrackData[PlayData[I].PlayerInfo.TrackID].Data[PlayData[I].PlayerInfo.TrackPos].Ticks > 0);
-      PlayData[I].PlayerInfo.MSec := -10 * PlayData[I].Ticks * MSPT;
-
-      // Loop Start (XMI)
-      if (PlayData[I].Status shr 4 = 11)
-      and (PlayData[I].BParm1 = $74)
-      and (PlayData[I].BParm2 = $00)
-      then
-        LoopPoint := I;
-      // Loop End (XMI)
-      if (PlayData[I].Status shr 4 = 11)
-      and (PlayData[I].BParm1 = $75)
-      and (PlayData[I].BParm2 = $7F)
-      then
-        LoopEnd := I;
-      // Loop Point Start
-      if (PlayData[I].Status shr 4 = 11)
-      and (PlayData[I].BParm1 = $76)
-      and (PlayData[I].BParm2 = $00)
-      then
-        LoopPoint := I;
-      // Loop Point End
-      if (PlayData[I].Status shr 4 = 11)
-      and (PlayData[I].BParm1 = $76)
-      and (PlayData[I].BParm2 = $7F)
-      then
-        LoopEnd := I;
-
-      case PlayData[I].Status shr 4 of
-        15: begin
-          PlayData[I].PlayerInfo.Send := False;
-          // System
-          case PlayData[I].Status and 15 of
-            // Meta Event
-            15: begin
-              case PlayData[I].BParm1 of
-                // Tempo
-                81: begin
-                  if UseTempo then begin
-                    Tempo := PlayData[I].Value;
-                    MSPT := Round(Tempo / Division);
-                  end;
-                end;
-              end;
-            end;
-          end;
-          if EventProfile = 'rol' then begin
-            if (PlayData[I].Status = $FF)
-            and (PlayData[I].BParm1 = $7F)
-            and (PlayData[I].Len = 5)
-            and (PlayData[I].DataArray[0] = 0) then begin
-              // Set Tempo
-              Tempo := Round(InitTempo / PSingle(@PlayData[I].DataArray[1])^);
-              MSPT := Round(Tempo / Division);
-            end;
-          end;
-          if EventProfile = 'mus' then begin
-            if (PlayData[I].Status = $F0)
-            and (PlayData[I].Len = 5)
-            and (PlayData[I].DataArray[0] = $7F) then begin
-              // Set Speed
-              if ((PlayData[I].DataArray[3] / 128) +
-              PlayData[I].DataArray[2]) <> 0 then
-                Tempo :=
-                Round(InitTempo / ((PlayData[I].DataArray[3] / 128) + PlayData[I].DataArray[2]))
-              else
-                Tempo := InitTempo;
-              MSPT := Round(Tempo / Division);
-            end;
-          end;
-
-        end;
-      end;
-
-    end;
-  end;
-
-  procedure MixType2;
-  var
-    Idx, I, J: Integer;
-  begin
-    Idx := 0;
-    for I := 0 to Length(TrackData) - 1 do begin
-      SetLength(PlayData, Length(PlayData) + Length(TrackData[I].Data));
-      for J := 0 to Length(TrackData[I].Data) - 1 do begin
-        PlayData[Idx] := TrackData[I].Data[J];
-        PlayData[Idx].PlayerInfo.TrackID := I;
-        PlayData[Idx].PlayerInfo.TrackPos := J;
-        PlayData[Idx].PlayerInfo.Notify := (J = 0) or (PlayData[Idx].Ticks > 0);
-        PlayData[Idx].PlayerInfo.MSec := -10 * PlayData[Idx].Ticks * MSPT;
-
-        // Loop Start (XMI)
-        if (PlayData[Idx].Status shr 4 = 11)
-        and (PlayData[Idx].BParm1 = $74)
-        and (PlayData[Idx].BParm2 = $00)
-        then
-          LoopPoint := Idx;
-        // Loop End (XMI)
-        if (PlayData[Idx].Status shr 4 = 11)
-        and (PlayData[Idx].BParm1 = $75)
-        and (PlayData[Idx].BParm2 = $7F)
-        then
-          LoopEnd := Idx;
-        // Loop Point Start
-        if (PlayData[Idx].Status shr 4 = 11)
-        and (PlayData[Idx].BParm1 = $76)
-        and (PlayData[Idx].BParm2 = $00)
-        then
-          LoopPoint := Idx;
-        // Loop Point End
-        if (PlayData[Idx].Status shr 4 = 11)
-        and (PlayData[Idx].BParm1 = $76)
-        and (PlayData[Idx].BParm2 = $7F)
-        then
-          LoopEnd := Idx;
-
-        case PlayData[Idx].Status shr 4 of
-          8, 9, 10, 11, 14: begin
-            PlayData[Idx].PlayerInfo.Send := True;
-            PlayData[Idx].PlayerInfo.Cmd :=
-            PlayData[Idx].Status
-            or (PlayData[Idx].BParm1 shl 8)
-            or (PlayData[Idx].BParm2 shl 16);
-          end;
-          12, 13: begin
-            PlayData[Idx].PlayerInfo.Send := True;
-            PlayData[Idx].PlayerInfo.Cmd :=
-            PlayData[Idx].Status
-            or (PlayData[Idx].BParm1 shl 8);
-          end;
-          15: begin
-            PlayData[Idx].PlayerInfo.Send := False;
-            // System
-            case PlayData[Idx].Status and 15 of
-              // Meta Event
-              15: begin
-                case PlayData[Idx].BParm1 of
-                  // Tempo
-                  81: begin
-                    if UseTempo then begin
-                      Tempo := PlayData[Idx].Value;
-                      MSPT := Round(Tempo / Division);
-                    end;
-                  end;
-                end;
-              end;
-            end;
-            if EventProfile = 'rol' then begin
-              if (PlayData[Idx].Status = $FF)
-              and (PlayData[Idx].BParm1 = $7F)
-              and (PlayData[Idx].Len = 5)
-              and (PlayData[Idx].DataArray[0] = 0) then begin
-                // Set Tempo
-                Tempo := Round(InitTempo / PSingle(@PlayData[Idx].DataArray[1])^);
-                MSPT := Round(Tempo / Division);
-              end;
-            end;
-            if EventProfile = 'mus' then begin
-              if (PlayData[Idx].Status = $F0)
-              and (PlayData[Idx].Len = 5)
-              and (PlayData[Idx].DataArray[0] = $7F) then begin
-                // Set Speed
-                if ((PlayData[Idx].DataArray[3] / 128) +
-                PlayData[Idx].DataArray[2]) <> 0 then
-                  Tempo :=
-                  Round(InitTempo / ((PlayData[Idx].DataArray[3] / 128) + PlayData[Idx].DataArray[2]))
-                else
-                  Tempo := InitTempo;
-                MSPT := Round(Tempo / Division);
-              end;
-            end;
-          end;
-        end;
-
-        Inc(Idx);
-      end;
-    end;
-  end;
 begin
   if Length(TrackData) = 0 then
     Exit;
@@ -9827,19 +9736,7 @@ begin
     Exit;
   MIDIOut := NewMIDIOut;
 
-  SetLength(PlayData, 0);
-  Tempo := InitTempo;
-  MSPT := Round(Tempo / Division);
-  UseTempo := EventProfile <> 'xmi';
-  LoopPoint := 0;
-  LoopEnd := -1;
-  case Ver of
-    0: MixType0;
-    1: MixType1;
-    2: MixType2;
-  end;
-
-  MIDIThr := CreateThread(nil, 0, @MIDIPlayer, nil, CREATE_SUSPENDED, MIDIThrId);
+  MIDIThr := BeginThread(nil, 0, @MIDIPlayer, nil, CREATE_SUSPENDED, MIDIThrId);
   SetThreadPriority(MIDIThr, THREAD_PRIORITY_HIGHEST);
   ResumeThread(MIDIThr);
 end;
