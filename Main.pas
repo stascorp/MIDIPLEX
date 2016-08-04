@@ -11,6 +11,10 @@ const
   WM_EVENTIDX = WM_USER + 110;
   WM_TRACKIDX = WM_USER + 111;
   WM_SETVU = WM_USER + 112;
+  WM_PLAYCTRL = WM_USER + 113;
+
+  PLAYER_PLAY = 1;
+  PLAYER_STOP = 2;
 
 type
   FILE_VERSION = record
@@ -483,6 +487,7 @@ type
     procedure OnEventChange(var Msg: TMessage); message WM_EVENTIDX;
     procedure OnTrackChange(var Msg: TMessage); message WM_TRACKIDX;
     procedure OnVUChange(var Msg: TMessage); message WM_SETVU;
+    procedure OnPlayerChange(var Msg: TMessage); message WM_PLAYCTRL;
   public
     { Public declarations }
     function LoadFile(FileName, Fmt: String): Boolean;
@@ -8449,95 +8454,97 @@ end;
 
 procedure TMainForm.ChkButtons;
 begin
-  BAddTrack.Enabled:=Opened;
-  MAddTrack.Enabled:=Opened;
-  MTrack.Enabled:=Opened;
-  MEdit.Enabled:=Opened;
-  MSave.Enabled:=Opened;
-  MSaveAs.Enabled:=Opened;
-  MDelTrack.Enabled:=(Length(TrackData)>0);
-  BDelTrack.Enabled:=(Length(TrackData)>0);
-  Label1.Enabled:=(Length(TrackData)>0);
-  TrkCh.Enabled:=(Length(TrackData)>0);
-  Events.Enabled:=(Length(TrackData)>0);
-  MPaste.Enabled:=(Length(TrackData)>0) and BCopyBuf;
-  PPaste.Enabled:=(Length(TrackData)>0) and BCopyBuf;
-  MAddEvnt.Enabled:=(Length(TrackData)>0);
-  BAddEvnt.Enabled:=(Length(TrackData)>0);
-  Action1.Enabled:=(Length(TrackData)>0);
-  Action2.Enabled:=(Length(TrackData)>0);
-  Action3.Enabled:=(Length(TrackData)>0);
-  Action4.Enabled:=(Length(TrackData)>0);
-  Action5.Enabled:=(Length(TrackData)>0);
-  MActions.Enabled:=(Length(TrackData)>0);
-  MOptimize.Enabled:=(Length(TrackData)>0);
-  MFind.Enabled:=(Length(TrackData)>0);
-  MReplace.Enabled:=(Length(TrackData)>0);
-  MProfile.Enabled:=(Length(TrackData)>0);
-  if Length(TrackData)=0 then begin
-    MEditEvnt.Enabled:=False;
-    BEditEvnt.Enabled:=False;
-    MDelEvnt.Enabled:=False;
-    BDelEvnt.Enabled:=False;
-    MDelEvntRange.Enabled:=False;
-    BDelEvntRange.Enabled:=False;
-    MDelEvntT.Enabled:=False;
-    BDelEvntT.Enabled:=False;
-    MDelEvntRangeT.Enabled:=False;
-    BDelEvntRangeT.Enabled:=False;
-    MCut.Enabled:=False;
-    PCut.Enabled:=False;
-    MCopy.Enabled:=False;
-    PCopy.Enabled:=False;
-    PCopyText.Enabled:=False;
-    PDel.Enabled:=False;
-    MMoveUp.Enabled:=False;
-    BMoveUp.Enabled:=False;
-    MMoveDown.Enabled:=False;
-    BMoveDown.Enabled:=False;
-    MMerge1.Enabled:=False;
-    MMerge2.Enabled:=False;
-    MSplit1.Enabled:=False;
-    MSplit2.Enabled:=False;
-    MSplit3.Enabled:=False;
-    Events.ColCount:=1;
-    Events.RowCount:=1;
-    Events.DefaultColWidth:=64;
-    Events.Cells[0,0]:='No tracks';
+  BAddTrack.Enabled := Opened;
+  MAddTrack.Enabled := Opened;
+  MTrack.Enabled := Opened;
+  MEdit.Enabled := Opened;
+  MSave.Enabled := Opened;
+  MSaveAs.Enabled := Opened;
+  bPlay.Enabled := Opened and (MIDIThrId = 0);
+  bStop.Enabled := Opened and (MIDIThrId > 0);
+  MDelTrack.Enabled := Length(TrackData) > 0;
+  BDelTrack.Enabled := Length(TrackData) > 0;
+  Label1.Enabled := Length(TrackData) > 0;
+  TrkCh.Enabled := Length(TrackData) > 0;
+  Events.Enabled := Length(TrackData) > 0;
+  MPaste.Enabled := (Length(TrackData) > 0) and BCopyBuf;
+  PPaste.Enabled := (Length(TrackData) > 0) and BCopyBuf;
+  MAddEvnt.Enabled := Length(TrackData) > 0;
+  BAddEvnt.Enabled := Length(TrackData) > 0;
+  Action1.Enabled := Length(TrackData) > 0;
+  Action2.Enabled := Length(TrackData) > 0;
+  Action3.Enabled := Length(TrackData) > 0;
+  Action4.Enabled := Length(TrackData) > 0;
+  Action5.Enabled := Length(TrackData) > 0;
+  MActions.Enabled := Length(TrackData) > 0;
+  MOptimize.Enabled := Length(TrackData) > 0;
+  MFind.Enabled := Length(TrackData) > 0;
+  MReplace.Enabled := Length(TrackData) > 0;
+  MProfile.Enabled := Length(TrackData) > 0;
+  if Length(TrackData) = 0 then begin
+    MEditEvnt.Enabled := False;
+    BEditEvnt.Enabled := False;
+    MDelEvnt.Enabled := False;
+    BDelEvnt.Enabled := False;
+    MDelEvntRange.Enabled := False;
+    BDelEvntRange.Enabled := False;
+    MDelEvntT.Enabled := False;
+    BDelEvntT.Enabled := False;
+    MDelEvntRangeT.Enabled := False;
+    BDelEvntRangeT.Enabled := False;
+    MCut.Enabled := False;
+    PCut.Enabled := False;
+    MCopy.Enabled := False;
+    PCopy.Enabled := False;
+    PCopyText.Enabled := False;
+    PDel.Enabled := False;
+    MMoveUp.Enabled := False;
+    BMoveUp.Enabled := False;
+    MMoveDown.Enabled := False;
+    BMoveDown.Enabled := False;
+    MMerge1.Enabled := False;
+    MMerge2.Enabled := False;
+    MSplit1.Enabled := False;
+    MSplit2.Enabled := False;
+    MSplit3.Enabled := False;
+    Events.ColCount := 1;
+    Events.RowCount := 1;
+    Events.DefaultColWidth := 64;
+    Events.Cells[0,0] := 'No tracks';
   end else begin
-    MEditEvnt.Enabled:=(Length(TrackData[TrkCh.ItemIndex].Data)>0);
-    BEditEvnt.Enabled:=(Length(TrackData[TrkCh.ItemIndex].Data)>0);
-    MDelEvnt.Enabled:=(Length(TrackData[TrkCh.ItemIndex].Data)>0);
-    BDelEvnt.Enabled:=(Length(TrackData[TrkCh.ItemIndex].Data)>0);
-    MDelEvntRange.Enabled:=(Length(TrackData[TrkCh.ItemIndex].Data)>0);
-    BDelEvntRange.Enabled:=(Length(TrackData[TrkCh.ItemIndex].Data)>0);
-    MDelEvntT.Enabled:=(Length(TrackData[TrkCh.ItemIndex].Data)>0);
-    BDelEvntT.Enabled:=(Length(TrackData[TrkCh.ItemIndex].Data)>0);
-    MDelEvntRangeT.Enabled:=(Length(TrackData[TrkCh.ItemIndex].Data)>0);
-    BDelEvntRangeT.Enabled:=(Length(TrackData[TrkCh.ItemIndex].Data)>0);
-    MCut.Enabled:=(Length(TrackData[TrkCh.ItemIndex].Data)>0);
-    PCut.Enabled:=(Length(TrackData[TrkCh.ItemIndex].Data)>0);
-    MCopy.Enabled:=(Length(TrackData[TrkCh.ItemIndex].Data)>0);
-    PCopy.Enabled:=(Length(TrackData[TrkCh.ItemIndex].Data)>0);
-    PCopyText.Enabled:=(Length(TrackData[TrkCh.ItemIndex].Data)>0);
-    PDel.Enabled:=(Length(TrackData[TrkCh.ItemIndex].Data)>0);
-    MMoveUp.Enabled:=(Length(TrackData[TrkCh.ItemIndex].Data)>0);
-    BMoveUp.Enabled:=(Length(TrackData[TrkCh.ItemIndex].Data)>0);
-    MMoveDown.Enabled:=(Length(TrackData[TrkCh.ItemIndex].Data)>0);
-    BMoveDown.Enabled:=(Length(TrackData[TrkCh.ItemIndex].Data)>0);
-    if Events.Row=1 then begin
-      MMoveUp.Enabled:=False;
-      BMoveUp.Enabled:=False;
+    MEditEvnt.Enabled := Length(TrackData[TrkCh.ItemIndex].Data) > 0;
+    BEditEvnt.Enabled := Length(TrackData[TrkCh.ItemIndex].Data) > 0;
+    MDelEvnt.Enabled := Length(TrackData[TrkCh.ItemIndex].Data) > 0;
+    BDelEvnt.Enabled := Length(TrackData[TrkCh.ItemIndex].Data) > 0;
+    MDelEvntRange.Enabled := Length(TrackData[TrkCh.ItemIndex].Data) > 0;
+    BDelEvntRange.Enabled := Length(TrackData[TrkCh.ItemIndex].Data) > 0;
+    MDelEvntT.Enabled := Length(TrackData[TrkCh.ItemIndex].Data) > 0;
+    BDelEvntT.Enabled := Length(TrackData[TrkCh.ItemIndex].Data) > 0;
+    MDelEvntRangeT.Enabled := Length(TrackData[TrkCh.ItemIndex].Data) > 0;
+    BDelEvntRangeT.Enabled := Length(TrackData[TrkCh.ItemIndex].Data) > 0;
+    MCut.Enabled := Length(TrackData[TrkCh.ItemIndex].Data) > 0;
+    PCut.Enabled := Length(TrackData[TrkCh.ItemIndex].Data) > 0;
+    MCopy.Enabled := Length(TrackData[TrkCh.ItemIndex].Data) > 0;
+    PCopy.Enabled := Length(TrackData[TrkCh.ItemIndex].Data) > 0;
+    PCopyText.Enabled := Length(TrackData[TrkCh.ItemIndex].Data) > 0;
+    PDel.Enabled := Length(TrackData[TrkCh.ItemIndex].Data) > 0;
+    MMoveUp.Enabled := Length(TrackData[TrkCh.ItemIndex].Data) > 0;
+    BMoveUp.Enabled := Length(TrackData[TrkCh.ItemIndex].Data) > 0;
+    MMoveDown.Enabled := Length(TrackData[TrkCh.ItemIndex].Data) > 0;
+    BMoveDown.Enabled := Length(TrackData[TrkCh.ItemIndex].Data) > 0;
+    if Events.Row = 1 then begin
+      MMoveUp.Enabled := False;
+      BMoveUp.Enabled := False;
     end;
-    if Events.Row=Events.RowCount-1 then begin
-      MMoveDown.Enabled:=False;
-      BMoveDown.Enabled:=False;
+    if Events.Row = Events.RowCount - 1 then begin
+      MMoveDown.Enabled := False;
+      BMoveDown.Enabled := False;
     end;
-    MMerge1.Enabled:=(Length(TrackData)>1);
-    MMerge2.Enabled:=(Length(TrackData)>1);
-    MSplit1.Enabled:=(Length(TrackData[TrkCh.ItemIndex].Data)>0);
-    MSplit2.Enabled:=(Length(TrackData[TrkCh.ItemIndex].Data)>0);
-    MSplit3.Enabled:=(Length(TrackData[TrkCh.ItemIndex].Data)>0);
+    MMerge1.Enabled := Length(TrackData) > 1;
+    MMerge2.Enabled := Length(TrackData) > 1;
+    MSplit1.Enabled := Length(TrackData[TrkCh.ItemIndex].Data) > 0;
+    MSplit2.Enabled := Length(TrackData[TrkCh.ItemIndex].Data) > 0;
+    MSplit3.Enabled := Length(TrackData[TrkCh.ItemIndex].Data) > 0;
   end;
   MFormatMID.Enabled := True;
   MFormatXMI.Enabled := True;
@@ -9379,6 +9386,22 @@ begin
     VU[Msg.WParam] := Msg.LParam;
 end;
 
+procedure TMainForm.OnPlayerChange(var Msg: TMessage);
+begin
+  case Msg.WParam of
+    PLAYER_PLAY:
+    begin
+      bPlay.Enabled := False;
+      bStop.Enabled := True;
+    end;
+    PLAYER_STOP:
+    begin
+      bPlay.Enabled := True;
+      bStop.Enabled := False;
+    end;
+  end;
+end;
+
 procedure MIDIPlayer; stdcall;
 label
   play, loop, stop;
@@ -9706,6 +9729,7 @@ loop:
 stop:
   midiOutClose(MIDIOut);
   MIDIThrId := 0;
+  PostMessage(MainForm.Handle, WM_PLAYCTRL, PLAYER_STOP, 0);
 end;
 
 procedure TMainForm.bPlayClick(Sender: TObject);
@@ -9737,6 +9761,8 @@ begin
   if Err <> MMSYSERR_NOERROR then
     Exit;
   MIDIOut := NewMIDIOut;
+
+  SendMessage(Handle, WM_PLAYCTRL, PLAYER_PLAY, 0);
 
   MIDIThr := BeginThread(nil, 0, @MIDIPlayer, nil, CREATE_SUSPENDED, MIDIThrId);
   SetThreadPriority(MIDIThr, THREAD_PRIORITY_HIGHEST);
