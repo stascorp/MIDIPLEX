@@ -9388,9 +9388,9 @@ var
   UseTempo: Boolean;
   SecDelay: Double;
   lpFrequency,
-  lpPerfomanceCount,
-  lpPerfomanceCountOld: Int64;
-  TickCounter, LoopStartTick: UInt64;
+  lpPerfomanceCountStart,
+  lpPerfomanceCount: Int64;
+  TickCounter, TickPos, LoopStartTick: UInt64;
   LoopStartTrack: Integer;
   Data: Array of Array of Command;
   DPos: Array of Integer;
@@ -9573,18 +9573,19 @@ begin
       PostMessage(MainForm.Handle, WM_TRACKIDX, I, 0);
   end;
   TickCounter := 0;
+  TickPos := 0;
+  if not QueryPerformanceCounter(lpPerfomanceCountStart) then
+    goto stop; // QueryPerformanceCounter failed
 play:
   while MIDIThrId > 0 do
   begin
-    if not QueryPerformanceCounter(lpPerfomanceCountOld) then
-      goto stop; // QueryPerformanceCounter failed
     case Ver of
       0: // MIDI Type-0
       begin
         if DPos[I] >= Length(Data[I]) then
           Break;
         while (DPos[I] < Length(Data[I]))
-        and (Data[I][DPos[I]].Ticks <= TickCounter) do
+        and (Data[I][DPos[I]].Ticks <= TickPos) do
         begin
           if not PlayEvent(I, Data[I][DPos[I]]) then
             goto stop;
@@ -9604,7 +9605,7 @@ play:
           if DPos[I] < Length(Data[I]) then
             NoEvents := False;
           while (DPos[I] < Length(Data[I]))
-          and (Data[I][DPos[I]].Ticks <= TickCounter) do
+          and (Data[I][DPos[I]].Ticks <= TickPos) do
           begin
             if not PlayEvent(I, Data[I][DPos[I]]) then
               goto stop;
@@ -9641,7 +9642,7 @@ play:
         if NoEvents then
           Break;
         while (DPos[I] < Length(Data[I]))
-        and (Data[I][DPos[I]].Ticks <= TickCounter) do
+        and (Data[I][DPos[I]].Ticks <= TickPos) do
         begin
           if not PlayEvent(I, Data[I][DPos[I]]) then
             goto stop;
@@ -9654,11 +9655,12 @@ play:
         end;
       end;
     end;
+    Inc(TickCounter);
+    Inc(TickPos);
     repeat
       if not QueryPerformanceCounter(lpPerfomanceCount) then
         goto stop; // QueryPerformanceCounter failed
-    until lpPerfomanceCount - lpPerfomanceCountOld >= lpFrequency * SecDelay;
-    Inc(TickCounter);
+    until lpPerfomanceCount - lpPerfomanceCountStart >= lpFrequency * SecDelay * TickCounter;
   end;
 loop:
   if (MIDIThrId > 0) and LoopEnabled then
@@ -9698,7 +9700,7 @@ loop:
         PostMessage(MainForm.Handle, WM_TRACKIDX, I, 0);
       end;
     end;
-    TickCounter := LoopStartTick;
+    TickPos := LoopStartTick;
     goto play;
   end;
 stop:
