@@ -9420,6 +9420,13 @@ var
   I, J, Idx: Integer;
   NoEvents, LoopReq: Boolean;
 
+  procedure UpdateTempo(Value: Cardinal);
+  begin
+    Tempo := Value;
+    SecDelay := Value / Division / 1000000;
+    if lpPerfomanceCount > 0 then
+      lpPerfomanceCountStart := lpPerfomanceCount - Round(lpFrequency * SecDelay * TickCounter);
+  end;
   function PlaySysEx(B: Array of Byte): Boolean;
   var
     Buf: Array of Byte;
@@ -9514,11 +9521,9 @@ var
             // AdLib MUS -> Set Speed
             if ((E.DataArray[3] / 128) +
             E.DataArray[2]) <> 0 then
-              Tempo :=
-              Round(InitTempo / ((E.DataArray[3] / 128) + E.DataArray[2]))
+              UpdateTempo(Round(InitTempo / ((E.DataArray[3] / 128) + E.DataArray[2])))
             else
-              Tempo := InitTempo;
-            SecDelay := Tempo / Division / 1000000;
+              UpdateTempo(InitTempo);
           end;
         end;
         $FF: // Meta Event
@@ -9526,10 +9531,7 @@ var
             $51: // Change Tempo
             begin
               if UseTempo then
-              begin
-                Tempo := E.Value;
-                SecDelay := Tempo / Division / 1000000;
-              end;
+                UpdateTempo(E.Value);
             end;
             $7F: // Sequencer Specific (process the same as SysEx)
             begin
@@ -9537,12 +9539,8 @@ var
                 Result := PlaySysEx(E.DataArray);
               if (EventProfile = 'rol')
               and (E.Len = 5)
-              and (E.DataArray[0] = 0) then
-              begin
-                // AdLib ROL -> Set Tempo
-                Tempo := Round(InitTempo / PSingle(@E.DataArray[1])^);
-                SecDelay := Tempo / Division / 1000000;
-              end;
+              and (E.DataArray[0] = 0) then // AdLib ROL -> Set Tempo
+                UpdateTempo(Round(InitTempo / PSingle(@E.DataArray[1])^));
             end;
           end;
       end;
