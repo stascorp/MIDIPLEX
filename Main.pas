@@ -9403,12 +9403,16 @@ begin
 end;
 
 procedure MIDIPlayer; stdcall;
+const
+  PROFILE_MID = 0;
+  PROFILE_XMI = 1;
+  PROFILE_ROL = 2;
+  PROFILE_MUS = 3;
 label
   play, loop, stop;
 var
   Ver, Division: Word;
   InitTempo, Tempo: Cardinal;
-  UseTempo: Boolean;
   SecDelay: Double;
   lpFrequency,
   lpPerfomanceCountStart,
@@ -9419,9 +9423,16 @@ var
   DPos: Array of Integer;
   I, J, Idx: Integer;
   NoEvents, LoopReq: Boolean;
+  PlayerProfile: Byte;
+  Notes: Array[0..15] of Array of record
+    Note: Byte;
+    Tick: UInt64;
+  end;
 
   procedure UpdateTempo(Value: Cardinal);
   begin
+    if Value = Tempo then
+      Exit;
     Tempo := Value;
     SecDelay := Value / Division / 1000000;
     if lpPerfomanceCount > 0 then
@@ -9456,10 +9467,64 @@ var
       if midiOutLongMsg(MIDIOut, @MIDIData, SizeOf(MIDIData)) <> MMSYSERR_NOERROR then
         Result := False;
   end;
+  function EventPreload(Trk: Integer; E: Command): Command;
+  var
+    Fl: Single;
+  begin
+    case PlayerProfile of
+      PROFILE_ROL: // AdLib ROL
+        if Length(E.DataArray) = 5 then
+          case E.DataArray[0] of
+            0: // Set Tempo
+            begin
+              E.Status := $FF;
+              E.BParm1 := $51;
+              E.Value := Round(InitTempo / PSingle(@E.DataArray[1])^);
+            end;
+            2: // Volume Event
+            begin
+              Move(E.DataArray[1], Fl, 4);
+              E.Status := $B0 or (((Trk - 1) div 4) and $F);
+              E.BParm1 := $7;
+              E.BParm2 := Round(127 * Fl);
+            end;
+            3: // Pitch Event
+            begin
+              Move(E.DataArray[1], Fl, 4);
+              E.Status := $E0 or (((Trk - 1) div 4) and $F);
+              E.Value := Floor(8192 * Fl);
+              E.BParm1 := E.Value and $7F;
+              E.BParm2 := (E.Value shr 7) and $7F;
+            end;
+          end;
+      PROFILE_MUS: // AdLib MUS
+        if (E.Status = $F0)
+        and (E.Len = 5)
+        and (E.DataArray[0] = $7F) then
+        begin
+          // Set Speed
+          E.Status := $FF;
+          E.BParm1 := $51;
+          Fl := E.DataArray[2] + (E.DataArray[3] / 128);
+          if Fl <> 0 then
+            E.Value := Round(InitTempo / Fl)
+          else
+            E.Value := InitTempo;
+        end;
+    end;
+    Result := E;
+  end;
   function PlayEvent(Trk: Integer; E: Command): Boolean;
   var
     dwMsg: DWord;
+    I: Integer;
   begin
+    // Set VU Meters
+    if E.Status shr 4 = 9 then
+      PostMessage(MainForm.Handle, WM_SETVU, E.Status and $F, E.BParm2);
+
+    if PlayerProfile <> PROFILE_MID then
+      E := EventPreload(Trk, E);
     Result := True;
     dwMsg := 0;
     if E.Status shr 4 < $F then
@@ -9473,9 +9538,32 @@ var
       if midiOutShortMsg(MIDIOut, dwMsg) <> MMSYSERR_NOERROR then
         Result := False;
 
-      // Set VU Meters
-      if E.Status shr 4 = 9 then
-        PostMessage(MainForm.Handle, WM_SETVU, E.Status and $F, E.BParm2);
+      if Result then
+        case PlayerProfile of
+          PROFILE_ROL: // AdLib ROL
+          begin
+            // Store played notes
+            // Turn off all notes on channel on new note or on "Note Off"
+            if E.Status shr 4 = 9 then
+            begin
+              for I := 0 to Length(Notes[E.Status and $F]) - 1 do
+              begin
+                dwMsg := E.Status or (Notes[E.Status and $F][I].Note shl 8);
+                if midiOutShortMsg(MIDIOut, dwMsg) <> MMSYSERR_NOERROR then
+                begin
+                  Result := False;
+                  Break;
+                end;
+              end;
+              SetLength(Notes[E.Status and $F], 0);
+              if Result and (E.BParm1 > 0) then
+              begin
+                SetLength(Notes[E.Status and $F], Length(Notes[E.Status and $F]) + 1);
+                Notes[E.Status and $F][High(Notes[E.Status and $F])].Note := E.BParm1;
+              end;
+            end;
+          end;
+        end;
 
       // Detect loop start
       if (E.Status shr 4 = $B)
@@ -9511,37 +9599,16 @@ var
     begin
       case E.Status of
         $F0: // System Exclusive
-        begin
           if Length(E.DataArray) > 0 then
             Result := PlaySysEx(E.DataArray);
-          if (EventProfile = 'mus')
-          and (E.Len = 5)
-          and (E.DataArray[0] = $7F) then
-          begin
-            // AdLib MUS -> Set Speed
-            if ((E.DataArray[3] / 128) +
-            E.DataArray[2]) <> 0 then
-              UpdateTempo(Round(InitTempo / ((E.DataArray[3] / 128) + E.DataArray[2])))
-            else
-              UpdateTempo(InitTempo);
-          end;
-        end;
         $FF: // Meta Event
           case E.BParm1 of
             $51: // Change Tempo
-            begin
-              if UseTempo then
+              if PlayerProfile <> PROFILE_XMI then
                 UpdateTempo(E.Value);
-            end;
             $7F: // Sequencer Specific (process the same as SysEx)
-            begin
               if Length(E.DataArray) > 0 then
                 Result := PlaySysEx(E.DataArray);
-              if (EventProfile = 'rol')
-              and (E.Len = 5)
-              and (E.DataArray[0] = 0) then // AdLib ROL -> Set Tempo
-                UpdateTempo(Round(InitTempo / PSingle(@E.DataArray[1])^));
-            end;
           end;
       end;
     end;
@@ -9572,7 +9639,14 @@ begin
 
   Tempo := InitTempo;
   SecDelay := Tempo / Division / 1000000;
-  UseTempo := EventProfile <> 'xmi';
+  PlayerProfile := PROFILE_MID;
+
+  if EventProfile = 'xmi' then
+    PlayerProfile := PROFILE_XMI;
+  if EventProfile = 'rol' then
+    PlayerProfile := PROFILE_ROL;
+  if EventProfile = 'mus' then
+    PlayerProfile := PROFILE_MUS;
 
   if not QueryPerformanceFrequency(lpFrequency) then
     goto stop; // QueryPerformanceFrequency failed
