@@ -4851,6 +4851,73 @@ begin
   end;
 end;
 
+procedure CMF_MIDIDrum(var C: Command);
+var
+  B: Byte;
+begin
+  // convert CMF drums to MIDI
+  case C.Status and 15 of
+    11: // ch11 - Bass Drum
+    begin
+      C.Status := (C.Status and $F0) or 9;
+      if C.BParm1 <= 36 then
+        B := 35
+      else
+        B := 36;
+      C.BParm1 := B;
+    end;
+    12: // ch12 - Snare Drum
+    begin
+      C.Status := (C.Status and $F0) or 9;
+      if C.BParm1 <= 40 then
+        B := 38
+      else
+        B := 40;
+      C.BParm1 := B;
+    end;
+    13: // ch13 - Tom
+    begin
+      C.Status := (C.Status and $F0) or 9;
+      B := 45;
+      if C.BParm1 < 39 then
+        B := 41;
+      if C.BParm1 = 39 then
+        B := 43;
+      if C.BParm1 = 40 then
+        B := 45;
+      if C.BParm1 = 41 then
+        B := 47;
+      if C.BParm1 = 42 then
+        B := 48;
+      if C.BParm1 > 42 then
+        B := 50;
+      C.BParm1 := B;
+    end;
+    14: // ch14 - Cymbal
+    begin
+      C.Status := (C.Status and $F0) or 9;
+      B := 57;
+      if C.BParm1 <= 50 then
+        B := 49;
+      if (C.BParm1 > 50)
+      and (C.BParm1 <= 65) then
+        B := 57;
+      if C.BParm1 > 65 then
+        B := 55;
+      C.BParm1 := B;
+    end;
+    15: // ch15 - Hi-Hat
+    begin
+      C.Status := (C.Status and $F0) or 9;
+      if C.BParm1 <= 44 then
+        B := 42
+      else
+        B := 44;
+      C.BParm1 := B;
+    end;
+  end;
+end;
+
 procedure TMainForm.Convert_XMI_MID;
 type
   NoteDur = packed record
@@ -6106,7 +6173,6 @@ end;
 procedure TMainForm.Convert_CMF_MID;
 var
   I, J: Integer;
-  Val: Byte;
   Rhythm: Boolean;
   Division: Word;
 begin
@@ -6119,135 +6185,13 @@ begin
       case TrackData[I].Data[J].Status shr 4 of
         8: // Note Off
         begin
-          if Rhythm then begin
-            // convert drums
-            case TrackData[I].Data[J].Status and 15 of
-              11: // ch11 - Bass Drum
-              begin
-                TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 9;
-                if TrackData[I].Data[J].BParm1 <= 36 then
-                  Val := 35
-                else
-                  Val := 36;
-                TrackData[I].Data[J].BParm1 := Val;
-              end;
-              12: // ch12 - Snare Drum
-              begin
-                TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 9;
-                if TrackData[I].Data[J].BParm1 <= 40 then
-                  Val := 38
-                else
-                  Val := 40;
-                TrackData[I].Data[J].BParm1 := Val;
-              end;
-              13: // ch13 - Tom
-              begin
-                TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 9;
-                Val := 45;
-                if TrackData[I].Data[J].BParm1 < 39 then
-                  Val := 41;
-                if TrackData[I].Data[J].BParm1 = 39 then
-                  Val := 43;
-                if TrackData[I].Data[J].BParm1 = 40 then
-                  Val := 45;
-                if TrackData[I].Data[J].BParm1 = 41 then
-                  Val := 47;
-                if TrackData[I].Data[J].BParm1 = 42 then
-                  Val := 48;
-                if TrackData[I].Data[J].BParm1 > 42 then
-                  Val := 50;
-                TrackData[I].Data[J].BParm1 := Val;
-              end;
-              14: // ch14 - Cymbal
-              begin
-                TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 9;
-                Val := 57;
-                if TrackData[I].Data[J].BParm1 <= 50 then
-                  Val := 49;
-                if (TrackData[I].Data[J].BParm1 > 50) and
-                (TrackData[I].Data[J].BParm1 <= 65) then
-                  Val := 57;
-                if TrackData[I].Data[J].BParm1 > 65 then
-                  Val := 55;
-                TrackData[I].Data[J].BParm1 := Val;
-              end;
-              15: // ch15 - Hi-Hat
-              begin
-                TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 9;
-                if TrackData[I].Data[J].BParm1 <= 44 then
-                  Val := 42
-                else
-                  Val := 44;
-                TrackData[I].Data[J].BParm1 := Val;
-              end;
-            end;
-          end;
+          if Rhythm then // convert drums
+            CMF_MIDIDrum(TrackData[I].Data[J]);
         end;
         9: // Note On
         begin
-          if Rhythm then begin
-            // convert drums
-            case TrackData[I].Data[J].Status and 15 of
-              11:
-              begin
-                TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 9;
-                if TrackData[I].Data[J].BParm1 <= 36 then
-                  Val := 35
-                else
-                  Val := 36;
-                TrackData[I].Data[J].BParm1 := Val;
-              end;
-              12:
-              begin
-                TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 9;
-                if TrackData[I].Data[J].BParm1 <= 40 then
-                  Val := 38
-                else
-                  Val := 40;
-                TrackData[I].Data[J].BParm1 := Val;
-              end;
-              13:
-              begin
-                TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 9;
-                Val := 45;
-                if TrackData[I].Data[J].BParm1 < 39 then
-                  Val := 41;
-                if TrackData[I].Data[J].BParm1 = 39 then
-                  Val := 43;
-                if TrackData[I].Data[J].BParm1 = 40 then
-                  Val := 45;
-                if TrackData[I].Data[J].BParm1 = 41 then
-                  Val := 47;
-                if TrackData[I].Data[J].BParm1 = 42 then
-                  Val := 48;
-                if TrackData[I].Data[J].BParm1 > 42 then
-                  Val := 50;
-                TrackData[I].Data[J].BParm1 := Val;
-              end;
-              14:
-              begin
-                TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 9;
-                Val := 57;
-                if TrackData[I].Data[J].BParm1 <= 50 then
-                  Val := 49;
-                if (TrackData[I].Data[J].BParm1 > 50) and
-                (TrackData[I].Data[J].BParm1 <= 65) then
-                  Val := 57;
-                if TrackData[I].Data[J].BParm1 > 65 then
-                  Val := 55;
-                TrackData[I].Data[J].BParm1 := Val;
-              end;
-              15:
-              begin
-                TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or 9;
-                if TrackData[I].Data[J].BParm1 <= 44 then
-                  Val := 42
-                else
-                  Val := 44;
-                TrackData[I].Data[J].BParm1 := Val;
-              end;
-            end;
-          end;
+          if Rhythm then // convert drums
+            CMF_MIDIDrum(TrackData[I].Data[J]);
         end;
         11: // Control Change
         begin
@@ -9408,6 +9352,8 @@ const
   PROFILE_XMI = 1;
   PROFILE_ROL = 2;
   PROFILE_MUS = 3;
+  PROFILE_MDI = 4;
+  PROFILE_CMF = 5;
 label
   play, loop, stop;
 var
@@ -9422,12 +9368,13 @@ var
   Data: Array of Array of Command;
   DPos: Array of Integer;
   I, J, Idx: Integer;
-  NoEvents, LoopReq: Boolean;
+  NoEvents, LoopReq, Rhythm: Boolean;
   PlayerProfile: Byte;
   Notes: Array[0..15] of Array of record
     Note: Byte;
     Tick: UInt64;
   end;
+  Volumes: Array[0..15] of Byte;
 
   procedure UpdateTempo(Value: Cardinal);
   begin
@@ -9481,6 +9428,11 @@ var
               E.BParm1 := $51;
               E.Value := Round(InitTempo / PSingle(@E.DataArray[1])^);
             end;
+            1: // Timbre Event
+            begin
+              E.Status := $C0 or (((Trk - 1) div 4) and $F);
+              E.BParm1 := E.DataArray[11];
+            end;
             2: // Volume Event
             begin
               Move(E.DataArray[1], Fl, 4);
@@ -9498,6 +9450,14 @@ var
             end;
           end;
       PROFILE_MUS: // AdLib MUS
+      begin
+        if E.Status shr 4 = $A then
+        begin // Volume Change
+          Volumes[E.Status and $F] := E.BParm1;
+          E.Status := $B0 or (E.Status and $F);
+          E.BParm2 := E.BParm1;
+          E.BParm1 := $7;
+        end;
         if (E.Status = $F0)
         and (E.Len = 5)
         and (E.DataArray[0] = $7F) then
@@ -9511,7 +9471,35 @@ var
           else
             E.Value := InitTempo;
         end;
+      end;
+      PROFILE_MDI: // AdLib MDI
+      begin
+        if E.Status shr 4 = $D then
+        begin // Volume Change
+          Volumes[E.Status and $F] := E.BParm1;
+          E.Status := $B0 or (E.Status and $F);
+          E.BParm2 := E.BParm1;
+          E.BParm1 := $7;
+        end;
+        if (E.Status = $FF)
+        and (E.Len = 6)
+        and (E.DataArray[0] = $00)
+        and (E.DataArray[1] = $00)
+        and (E.DataArray[2] = $3F)
+        and (E.DataArray[3] = $00)
+        and (E.DataArray[4] = $02) then
+          Rhythm := E.DataArray[5] > 0;
+      end;
+      PROFILE_CMF: // Creative Music File
+        if (E.Status shr 4 = $B)
+        and (E.BParm1 = $67) then
+          Rhythm := E.BParm2 > 0;
     end;
+    if Rhythm then
+      if PlayerProfile = PROFILE_CMF then
+        CMF_MIDIDrum(E)
+      else
+        ROL_MIDIDrum(E);
     Result := E;
   end;
   function PlayEvent(Trk: Integer; E: Command): Boolean;
@@ -9529,6 +9517,79 @@ var
     dwMsg := 0;
     if E.Status shr 4 < $F then
     begin
+      case PlayerProfile of
+        PROFILE_ROL: // AdLib ROL
+        begin
+          // Turn off all notes on channel on new note or on "Note Off"
+          if E.Status shr 4 = 9 then
+          begin
+            for I := 0 to Length(Notes[E.Status and $F]) - 1 do
+            begin
+              dwMsg := E.Status or (Notes[E.Status and $F][I].Note shl 8);
+              midiOutShortMsg(MIDIOut, dwMsg);
+            end;
+            SetLength(Notes[E.Status and $F], 0);
+          end;
+        end;
+
+        PROFILE_MUS: // AdLib MUS
+        begin
+          case E.Status shr 4 of
+            $9:
+            begin
+              if E.BParm2 > 0 then
+              begin
+                // Update Volume
+                if E.BParm2 <> Volumes[E.Status and $F] then
+                begin
+                  Volumes[E.Status and $F] := E.BParm2;
+                  dwMsg := $B0 or (E.Status and $F) or ($7 shl 8) or (E.BParm2 shl 16);
+                  midiOutShortMsg(MIDIOut, dwMsg);
+                end;
+                E.BParm2 := $7F;
+              end;
+            end;
+          end;
+        end;
+
+        PROFILE_MDI: // AdLib MDI
+        begin
+          case E.Status shr 4 of
+            $8:
+            begin
+              // Update Volume
+              if E.BParm2 <> Volumes[E.Status and $F] then
+              begin
+                Volumes[E.Status and $F] := E.BParm2;
+                dwMsg := $B0 or (E.Status and $F) or ($7 shl 8) or (E.BParm2 shl 16);
+                midiOutShortMsg(MIDIOut, dwMsg);
+              end;
+              // Turn off all notes on channel
+              if E.BParm1 = 0 then
+              begin
+                for I := 0 to Length(Notes[E.Status and $F]) - 1 do
+                begin
+                  dwMsg := E.Status or (Notes[E.Status and $F][I].Note shl 8);
+                  midiOutShortMsg(MIDIOut, dwMsg);
+                end;
+                SetLength(Notes[E.Status and $F], 0);
+              end;
+            end;
+            $9:
+            begin
+              // Update Volume
+              if E.BParm2 <> Volumes[E.Status and $F] then
+              begin
+                Volumes[E.Status and $F] := E.BParm2;
+                dwMsg := $B0 or (E.Status and $F) or ($7 shl 8) or (E.BParm2 shl 16);
+                midiOutShortMsg(MIDIOut, dwMsg);
+              end;
+              E.BParm2 := $7F;
+            end;
+          end;
+        end;
+      end;
+
       case E.Status shr 4 of
         $8, $9, $A, $B, $E:
           dwMsg := E.Status or (E.BParm1 shl 8) or (E.BParm2 shl 16);
@@ -9543,20 +9604,22 @@ var
           PROFILE_ROL: // AdLib ROL
           begin
             // Store played notes
-            // Turn off all notes on channel on new note or on "Note Off"
             if E.Status shr 4 = 9 then
             begin
-              for I := 0 to Length(Notes[E.Status and $F]) - 1 do
+              if E.BParm1 > 0 then
               begin
-                dwMsg := E.Status or (Notes[E.Status and $F][I].Note shl 8);
-                if midiOutShortMsg(MIDIOut, dwMsg) <> MMSYSERR_NOERROR then
-                begin
-                  Result := False;
-                  Break;
-                end;
+                SetLength(Notes[E.Status and $F], Length(Notes[E.Status and $F]) + 1);
+                Notes[E.Status and $F][High(Notes[E.Status and $F])].Note := E.BParm1;
               end;
-              SetLength(Notes[E.Status and $F], 0);
-              if Result and (E.BParm1 > 0) then
+            end;
+          end;
+
+          PROFILE_MDI: // AdLib MDI
+          begin
+            // Store played notes
+            if E.Status shr 4 = 9 then
+            begin
+              if E.BParm1 > 0 then
               begin
                 SetLength(Notes[E.Status and $F], Length(Notes[E.Status and $F]) + 1);
                 Notes[E.Status and $F][High(Notes[E.Status and $F])].Note := E.BParm1;
@@ -9647,6 +9710,19 @@ begin
     PlayerProfile := PROFILE_ROL;
   if EventProfile = 'mus' then
     PlayerProfile := PROFILE_MUS;
+  if EventProfile = 'mdi' then
+    PlayerProfile := PROFILE_MDI;
+  if EventProfile = 'cmf' then
+    PlayerProfile := PROFILE_CMF;
+
+  Rhythm := False;
+  if PlayerProfile = PROFILE_ROL then
+    if SongData_GetInt('ROL_Melodic', I) then
+      Rhythm := I = 0;
+  if PlayerProfile = PROFILE_MUS then
+    if SongData_GetInt('MUS_Percussive', I) then
+      Rhythm := I > 0;
+  FillChar(Volumes, Length(Volumes), $FF);
 
   if not QueryPerformanceFrequency(lpFrequency) then
     goto stop; // QueryPerformanceFrequency failed
