@@ -11198,6 +11198,8 @@ var
   Filter: TStringList;
   AllStr: String;
   I: Integer;
+  FV: FILE_VERSION;
+  S: String;
 begin
   imgVU.Canvas.Pen.Color := clBlack;
   imgVU.Canvas.Brush.Color := clBlack;
@@ -11234,6 +11236,60 @@ begin
 
   MW32RefreshClick(Sender);
   ChkButtons;
+
+  if ParamCount() > 0
+  then begin
+    if Pos('-', ParamStr(1)) = 1 then
+    begin
+      GetMyVersion(FV);
+      S := 'MIDIPLEX Sequencer ' +
+        Format('v%d.%d.%d', [FV.Version.w.Major, FV.Version.w.Minor, FV.Release]) + #13#10;
+      S := S + 'Copyright (C) Stas''M Corp. 2012-2016'#13#10;
+      S := S + #13#10;
+      if ParamStr(1) = '-h' then
+      begin
+        S := S + 'USAGE:'#13#10;
+        S := S + '  MIDIPLEX <filename|actions>'#13#10;
+        S := S + #13#10;
+        S := S + '  filename        Open file on start'#13#10;
+        S := S + #13#10;
+        S := S + '  actions         Possible command-line actions:'#13#10;
+        S := S + '    -h                        Display this message'#13#10;
+        S := S + '    -c <format> <filename>    Convert file to specified format'#13#10;
+        MessageBox(Handle, PWideChar(S), 'Command-line options', MB_ICONINFORMATION or MB_OK);
+      end;
+      if ParamStr(1) = '-c' then
+        if ParamStr(2) <> '' then
+        begin
+          if ParamStr(3) <> '' then
+          begin
+            Log.Clear;
+            LoadFile(ParamStr(3), '');
+            {if TrkCh.Items.Count > 0 then begin
+              TrkCh.ItemIndex := 0;
+              FillEvents(TrkCh.ItemIndex);
+            end;
+            ChkButtons;}
+            SaveFile(ChangeFileExt(ParamStr(3), '.' + ParamStr(2)));
+          end
+          else
+            MessageBox(Handle, 'File name not specified.', 'Error', MB_ICONERROR or MB_OK);
+        end
+        else
+          MessageBox(Handle, 'Format not specified.', 'Error', MB_ICONERROR or MB_OK);
+      Halt(0);
+    end
+    else
+    begin
+      Log.Clear;
+      LoadFile(ParamStr(1), '');
+      if TrkCh.Items.Count > 0 then begin
+        TrkCh.ItemIndex := 0;
+        FillEvents(TrkCh.ItemIndex);
+      end;
+      ChkButtons;
+    end;
+  end;
 end;
 
 procedure TMainForm.FormDestroy(Sender: TObject);
