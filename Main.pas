@@ -544,6 +544,7 @@ type
     procedure Convert_ROL_MID;
     procedure Convert_MUS_ROL;
     procedure Convert_MDI_ROL;
+    procedure Convert_IMS_MID;
     procedure ConvertTicks(RelToAbs: Boolean; var Data: Array of Command);
     function MergeTracksUsingTicks(Tracks: Array of Integer; EOT: Boolean): Chunk;
     procedure MergeTracksByTicks;
@@ -8142,6 +8143,236 @@ begin
   Log.Lines.Add('[+] Done.');
 end;
 
+procedure TMainForm.Convert_IMS_MID;
+var
+  TPB: Word;
+  NewTempo: Cardinal;
+  TickFactor: Double;
+  I, J: Integer;
+  B: Byte;
+  Division: Word;
+  Rhythm: Boolean;
+  Notes: Array[0..15] of ShortInt;
+  Volumes: Array[0..15] of ShortInt;
+  SName: String;
+begin
+  Log.Lines.Add('[*] Converting AdLib IMS to Standard MIDI...');
+  Application.ProcessMessages;
+  if not SongData_GetWord('MUS_TicksPerBeat', TPB) then
+  begin
+    Log.Lines.Add('[-] Ticks Per Beat is not defined.');
+    Exit;
+  end;
+  NewTempo := 500000;
+  TickFactor := 60000000 / TPB / NewTempo;
+  if SongData_GetInt('MUS_Percussive', I) then
+    Rhythm := I > 0
+  else
+    Rhythm := False;
+  for I := 0 to Length(TrackData) - 1 do
+  begin
+    // Step 1: Convert events
+    FillChar(Notes, SizeOf(Notes), -1);
+    FillChar(Volumes, SizeOf(Volumes), -1);
+    J := 0;
+    while J < Length(TrackData[I].Data) do
+    begin
+      // Filter events on unused channels
+      if TrackData[I].Data[J].Status shr 4 < 15 then // Not System event
+        if (     Rhythm  and (TrackData[I].Data[J].Status and $F > 10))
+        or ((not Rhythm) and (TrackData[I].Data[J].Status and $F > 8 ))
+        then begin
+          DelEvent(I, J, True);
+          Continue;
+        end;
+      // Process events
+      case TrackData[I].Data[J].Status shr 4 of
+        8: // Note Off / Note Retrigger
+        begin
+          if TrackData[I].Data[J].BParm2 > 0 then
+          begin
+            if Volumes[TrackData[I].Data[J].Status and $F] <> ShortInt(TrackData[I].Data[J].BParm2) then
+            begin
+              Volumes[TrackData[I].Data[J].Status and $F] := TrackData[I].Data[J].BParm2;
+              NewEvent(I, J, $B0, 7);
+              TrackData[I].Data[J].Ticks := TrackData[I].Data[J + 1].Ticks;
+              TrackData[I].Data[J].Status := $B0 or TrackData[I].Data[J + 1].Status and $F;
+              TrackData[I].Data[J].BParm1 := 7;
+              TrackData[I].Data[J].BParm2 := Volumes[TrackData[I].Data[J].Status and $F];
+              Inc(J);
+              TrackData[I].Data[J].Ticks := 0;
+            end;
+            if Notes[TrackData[I].Data[J].Status and $F] > -1 then
+            begin
+              NewEvent(I, J, $90, 0);
+              TrackData[I].Data[J].Ticks := TrackData[I].Data[J + 1].Ticks;
+              TrackData[I].Data[J].Status := $90 or TrackData[I].Data[J + 1].Status and $F;
+              TrackData[I].Data[J].BParm1 := Notes[TrackData[I].Data[J].Status and $F];
+              TrackData[I].Data[J].BParm2 := 0;
+              if Rhythm then
+                ROL_MIDIDrum(TrackData[I].Data[J]);
+              Inc(J);
+              TrackData[I].Data[J].Ticks := 0;
+            end;
+            TrackData[I].Data[J].Status := $90 or (TrackData[I].Data[J].Status and $F);
+            TrackData[I].Data[J].BParm2 := $7F;
+            Notes[TrackData[I].Data[J].Status and $F] := TrackData[I].Data[J].BParm1;
+          end;
+          if Rhythm then
+            ROL_MIDIDrum(TrackData[I].Data[J]);
+        end;
+        9: // Note On
+        begin
+          if TrackData[I].Data[J].BParm2 > 0 then
+          begin
+            if Volumes[TrackData[I].Data[J].Status and $F] <> ShortInt(TrackData[I].Data[J].BParm2) then
+            begin
+              Volumes[TrackData[I].Data[J].Status and $F] := TrackData[I].Data[J].BParm2;
+              NewEvent(I, J, $B0, 7);
+              TrackData[I].Data[J].Ticks := TrackData[I].Data[J + 1].Ticks;
+              TrackData[I].Data[J].Status := $B0 or TrackData[I].Data[J + 1].Status and $F;
+              TrackData[I].Data[J].BParm1 := 7;
+              TrackData[I].Data[J].BParm2 := Volumes[TrackData[I].Data[J].Status and $F];
+              Inc(J);
+              TrackData[I].Data[J].Ticks := 0;
+            end;
+            TrackData[I].Data[J].BParm2 := 127;
+            Notes[TrackData[I].Data[J].Status and $F] := TrackData[I].Data[J].BParm1;
+          end;
+          if Rhythm then
+            ROL_MIDIDrum(TrackData[I].Data[J]);
+        end;
+        10: // Poly Aftertouch -> Volume Change
+        begin
+          if Volumes[TrackData[I].Data[J].Status and $F] <> ShortInt(TrackData[I].Data[J].BParm1) then
+          begin
+            Volumes[TrackData[I].Data[J].Status and $F] := TrackData[I].Data[J].BParm1;
+            TrackData[I].Data[J].Status := $B0 or TrackData[I].Data[J].Status and $F;
+            TrackData[I].Data[J].BParm1 := 7;
+            TrackData[I].Data[J].BParm2 := Volumes[TrackData[I].Data[J].Status and $F];
+          end
+          else
+          begin
+            DelEvent(I, J, True);
+            Continue;
+          end;
+        end;
+        12: // Program Change
+        begin
+          if Rhythm and (TrackData[I].Data[J].Status and $F > 5) then
+          begin // Unused on rhythm channels
+            DelEvent(I, J, True);
+            Continue;
+          end;
+          if SongData_GetStr('IMS_Name#'+IntToStr(TrackData[I].Data[J].BParm1), SName) then
+          begin // Insert instrument name
+            NewEvent(I, J, $FF, $04);
+            TrackData[I].Data[J].DataString := AnsiString(SName);
+            Inc(J);
+          end;
+        end;
+        15: // System Event
+        begin
+          case TrackData[I].Data[J].Status and $F of
+            0: // SysEx
+            begin
+              if (TrackData[I].Data[J].Len = 5)
+              and (TrackData[I].Data[J].DataArray[0] = $7F)
+              then begin
+                // Tempo
+                TrackData[I].Data[J].Status := $FF;
+                TrackData[I].Data[J].BParm1 := 81;
+
+                if ((TrackData[I].Data[J].DataArray[3] / 128) +
+                TrackData[I].Data[J].DataArray[2]) <> 0 then
+                  TrackData[I].Data[J].Value :=
+                  Round(NewTempo / ((TrackData[I].Data[J].DataArray[3] / 128) + TrackData[I].Data[J].DataArray[2]))
+                else
+                  TrackData[I].Data[J].Value := NewTempo;
+
+                TrackData[I].Data[J].DataArray[0] := (TrackData[I].Data[J].Value shr 16) and $FF;
+                TrackData[I].Data[J].DataArray[1] := (TrackData[I].Data[J].Value shr 8) and $FF;
+                TrackData[I].Data[J].DataArray[2] := (TrackData[I].Data[J].Value) and $FF;
+
+                SetLength(TrackData[I].Data[J].DataArray, 3);
+                TrackData[I].Data[J].Len := 3;
+              end;
+            end;
+            $C: // End Of Track
+            begin
+              TrackData[I].Data[J].Status := $FF;
+              TrackData[I].Data[J].BParm1 := $2F;
+            end;
+          end;
+        end;
+      end;
+      Inc(J);
+    end;
+    // Step 2: Convert ticks
+    for J := 0 to Length(TrackData[I].Data) - 1 do
+      if TrackData[I].Data[J].Ticks > 0 then
+        TrackData[I].Data[J].Ticks := Round(TrackData[I].Data[J].Ticks * TickFactor);
+    // Step 3: Insert pitch bend ranges
+    SongData_GetByte('MUS_PitchBendRange', B);
+    if B > 1 then
+    begin
+      for J := 0 to 5 do
+      begin
+        NewEvent(I, J*5 + 0, $B0, $64);
+        TrackData[I].Data[J*5 + 0].Status := $B0 or J;
+        TrackData[I].Data[J*5 + 0].BParm2 := 0;
+        NewEvent(I, J*5 + 1, $B0, $65);
+        TrackData[I].Data[J*5 + 1].Status := $B0 or J;
+        TrackData[I].Data[J*5 + 1].BParm2 := 0;
+        NewEvent(I, J*5 + 2, $B0, 6);
+        TrackData[I].Data[J*5 + 2].Status := $B0 or J;
+        TrackData[I].Data[J*5 + 2].BParm2 := B;
+        NewEvent(I, J*5 + 3, $B0, $64);
+        TrackData[I].Data[J*5 + 3].Status := $B0 or J;
+        TrackData[I].Data[J*5 + 3].BParm2 := $7F;
+        NewEvent(I, J*5 + 4, $B0, $65);
+        TrackData[I].Data[J*5 + 4].Status := $B0 or J;
+        TrackData[I].Data[J*5 + 4].BParm2 := $7F;
+      end;
+      if not Rhythm then
+        for J := 6 to 8 do
+        begin
+          NewEvent(I, J*5 + 0, $B0, $64);
+          TrackData[I].Data[J*5 + 0].Status := $B0 or J;
+          TrackData[I].Data[J*5 + 0].BParm2 := 0;
+          NewEvent(I, J*5 + 1, $B0, $65);
+          TrackData[I].Data[J*5 + 1].Status := $B0 or J;
+          TrackData[I].Data[J*5 + 1].BParm2 := 0;
+          NewEvent(I, J*5 + 2, $B0, 6);
+          TrackData[I].Data[J*5 + 2].Status := $B0 or J;
+          TrackData[I].Data[J*5 + 2].BParm2 := B;
+          NewEvent(I, J*5 + 3, $B0, $64);
+          TrackData[I].Data[J*5 + 3].Status := $B0 or J;
+          TrackData[I].Data[J*5 + 3].BParm2 := $7F;
+          NewEvent(I, J*5 + 4, $B0, $65);
+          TrackData[I].Data[J*5 + 4].Status := $B0 or J;
+          TrackData[I].Data[J*5 + 4].BParm2 := $7F;
+        end;
+    end;
+    // Step 4: Insert tune name
+    if (I = 0) and SongData_GetStr('MUS_TuneName', SName) then
+      if SName <> '' then
+      begin
+        NewEvent(I, 0, $FF, $03);
+        TrackData[I].Data[0].DataString := AnsiString(SName);
+      end;
+    Log.Lines.Add('[+] Track #'+IntToStr(I)+': '+IntToStr(Length(TrackData[I].Data))+' events converted.');
+  end;
+  SongData_GetWord('Division', Division);
+  SongData.Strings.Clear;
+
+  SongData_PutInt('MIDIType', 0);
+  SongData_PutDWord('InitTempo', NewTempo);
+  SongData_PutInt('SMPTE', 0);
+  SongData_PutInt('Division', Division);
+  Log.Lines.Add('[+] Done.');
+end;
+
 procedure TMainForm.RefTrackList;
 var
   I: Integer;
@@ -12110,6 +12341,13 @@ begin
       Convert_MUS_ROL;
       EventProfile := 'rol';
       EventViewProfile := 'rol';
+    end;
+  end;
+  if EventProfile = 'ims' then begin
+    if DestProfile = 'mid' then begin
+      Convert_IMS_MID;
+      EventProfile := 'mid';
+      EventViewProfile := 'mid';
     end;
   end;
 end;
