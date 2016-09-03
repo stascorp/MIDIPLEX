@@ -566,8 +566,9 @@ object MainForm: TMainForm
       '.mid;*.midi;*.kar|RIFF MIDI (*.rmi;*.rmid;*.orc)|*.rmi;*.rmid;*.' +
       'orc|MIDI Stream (*.mds;*.mids)|*.mds;*.mids|Miles Extended MIDI ' +
       '(*.xmi)|*.xmi|Creative Music File (*.cmf)|*.cmf|AdLib ROL (*.rol' +
-      ')|*.rol|AdLib MUS (*.mus)|*.mus|AdLib MDI (*.mdi)|*.mdi|Raw MIDI' +
-      ' data (Standard)|*.raw|System Exclusive data|*.syx'
+      ')|*.rol|AdLib MUS (*.mus)|*.mus|AdLib IMS (*.ims)|*.ims|AdLib MD' +
+      'I (*.mdi)|*.mdi|Raw MIDI data (Standard)|*.raw|System Exclusive ' +
+      'data|*.syx'
     Title = 'Open MIDI File'
     Left = 256
     Top = 40
@@ -777,6 +778,10 @@ object MainForm: TMainForm
           Caption = 'AdLib MUS'
           OnClick = MFormatMUSClick
         end
+        object MFormatIMS: TMenuItem
+          Caption = 'AdLib IMS'
+          OnClick = MFormatIMSClick
+        end
         object MFormatMDI: TMenuItem
           Caption = 'AdLib MDI'
           OnClick = MFormatMDIClick
@@ -827,6 +832,10 @@ object MainForm: TMainForm
         object MProfileMUS: TMenuItem
           Caption = 'AdLib MUS'
           OnClick = MProfileMUSClick
+        end
+        object MProfileIMS: TMenuItem
+          Caption = 'AdLib IMS'
+          OnClick = MProfileIMSClick
         end
         object MProfileMDI: TMenuItem
           Caption = 'AdLib MDI'
@@ -1472,8 +1481,8 @@ object MainForm: TMainForm
       'Standard MIDI (*.mid;*.midi;*.kar)|*.mid;*.midi;*.kar|RIFF MIDI ' +
       '(*.rmi;*.rmid)|*.rmi;*.rmid|Miles Extended MIDI (*.xmi)|*.xmi|Cr' +
       'eative Music File (*.cmf)|*.cmf|AdLib ROL (*.rol)|*.rol|AdLib MU' +
-      'S (*.mus)|*.mus|AdLib MDI (*.mdi)|*.mdi|Raw MIDI data (Standard)' +
-      '|*.raw|System Exclusive data|*.syx'
+      'S (*.mus)|*.mus|AdLib IMS (*.ims)|*.ims|AdLib MDI (*.mdi)|*.mdi|' +
+      'Raw MIDI data (Standard)|*.raw|System Exclusive data|*.syx'
     Options = [ofOverwritePrompt, ofHideReadOnly, ofEnableSizing]
     Title = 'Save MIDI File'
     Left = 384

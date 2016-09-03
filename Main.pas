@@ -303,6 +303,8 @@ type
     MProfileROL: TMenuItem;
     MFormatROL: TMenuItem;
     MStats: TMenuItem;
+    MFormatIMS: TMenuItem;
+    MProfileIMS: TMenuItem;
     procedure BtOpenClick(Sender: TObject);
     procedure FormCreate(Sender: TObject);
     procedure TrkChChange(Sender: TObject);
@@ -465,11 +467,13 @@ type
     procedure MFormatCMFClick(Sender: TObject);
     procedure MFormatROLClick(Sender: TObject);
     procedure MFormatMUSClick(Sender: TObject);
+    procedure MFormatIMSClick(Sender: TObject);
     procedure MProfileMIDClick(Sender: TObject);
     procedure MProfileMDIClick(Sender: TObject);
     procedure MProfileCMFClick(Sender: TObject);
     procedure MProfileROLClick(Sender: TObject);
     procedure MProfileMUSClick(Sender: TObject);
+    procedure MProfileIMSClick(Sender: TObject);
     procedure PCopyTextClick(Sender: TObject);
     procedure bPlayClick(Sender: TObject);
     procedure bStopClick(Sender: TObject);
@@ -565,9 +569,9 @@ var
   WidTable: Array[0..4] of Integer = (40, 56, 24, 172, 320);
   Opened: Boolean = False;
   Container, EventFormat, EventProfile, EventViewProfile: AnsiString;
-  // Container (smf, rmi, xmi, cmf, mus, raw, syx, mids)
+  // Container (smf, rmi, xmi, cmf, mus, ims, raw, syx, mids)
   // EventFormat (mid, xmi, mus)
-  // EventProfile (mid, mdi, xmi, cmf, mus)
+  // EventProfile (mid, mdi, xmi, cmf, mus, ims)
   // EventViewProfile = EventProfile
   SongData: TValueListEditor;
   TrackData: Array of Chunk;
@@ -2001,13 +2005,19 @@ var
   Division, W: Word;
   tuneName: Array[0..29] of AnsiChar;
   Title, Bank: String;
+  MIDIData: TMemoryStream;
   BankLoad: Boolean;
   I: Integer;
   Banks: TStringList;
   B: Byte;
+  instName: Array[0..8] of AnsiChar;
 begin
   Result := False;
-  Log.Lines.Add('[*] Reading AdLib MUS file...');
+  if Container = 'ims' then
+    Log.Lines.Add('[*] Reading AdLib IMS file...')
+  else
+    Log.Lines.Add('[*] Reading AdLib MUS file...');
+
   if F.Size < 70 then begin
     Log.Lines.Add('[-] Error: Wrong file size.');
     Exit;
@@ -2062,17 +2072,27 @@ begin
   F.Seek($2A, soFromBeginning);
   F.ReadBuffer(MIDILength, 4);
   if F.Size > 70 + MIDILength then begin
-    Log.Lines.Add('[*] Warning: File has some excess data.');
-    F.SetSize(70 + MIDILength);
+    if Container = 'mus' then
+    begin
+      Log.Lines.Add('[*] Warning: File has some excess data.');
+      F.SetSize(70 + MIDILength);
+    end;
   end else
     if F.Size < 70 + MIDILength then
+    begin
       Log.Lines.Add('[*] Warning: File seems to be truncated.');
-  F.Seek($46, soFromBeginning);
+      MIDILength := F.Size - 70;
+    end;
 
   SetLength(TrackData, 1);
   TrackData[0].Title := Title;
   SetLength(TrackData[0].Data, 0);
-  ReadTrackData_MUS(F, TrackData[0]);
+  MIDIData := TMemoryStream.Create;
+  MIDIData.SetSize(MIDILength);
+  F.Seek($46, soFromBeginning);
+  F.ReadBuffer(MIDIData.Memory^, MIDILength);
+  ReadTrackData_MUS(MIDIData, TrackData[0]);
+  MIDIData.Free;
   Log.Lines.Add('[+] '+IntToStr(Length(TrackData[0].Data))+' events found.');
   SongData_PutInt('MIDIType', 0);
 
@@ -2092,42 +2112,67 @@ begin
   if nrCommandAct <> nrCommand then
     Log.Lines.Add('[*] Warning: Defined number of commands in the header doesn''t correspond actual number of commands.');
 
-  Log.Lines.Add('[*] Looking for instrument bank file...');
-  Bank := ChangeFileExt(FileName, '.snd');
-  BankLoad := MUS_LoadBank(Bank);
-  if not BankLoad then
+  if Container = 'mus' then
   begin
-    Bank := ChangeFileExt(FileName, '.tim');
+    Log.Lines.Add('[*] Looking for instrument bank file...');
+    Bank := ChangeFileExt(FileName, '.snd');
     BankLoad := MUS_LoadBank(Bank);
-  end;
-  if not BankLoad then
-  begin
-    Banks := TStringList.Create;
-    GetFiles(ExtractFilePath(FileName), '*.snd', Banks);
-    for I := 0 to Banks.Count - 1 do
+    if not BankLoad then
     begin
-      Bank := Banks[I];
+      Bank := ChangeFileExt(FileName, '.tim');
       BankLoad := MUS_LoadBank(Bank);
-      if BankLoad then Break;
     end;
-    Banks.Free;
-  end;
-  if not BankLoad then
-  begin
-    Banks := TStringList.Create;
-    GetFiles(ExtractFilePath(FileName), '*.tim', Banks);
-    for I := 0 to Banks.Count - 1 do
+    if not BankLoad then
     begin
-      Bank := Banks[I];
-      BankLoad := MUS_LoadBank(Bank);
-      if BankLoad then Break;
+      Banks := TStringList.Create;
+      GetFiles(ExtractFilePath(FileName), '*.snd', Banks);
+      for I := 0 to Banks.Count - 1 do
+      begin
+        Bank := Banks[I];
+        BankLoad := MUS_LoadBank(Bank);
+        if BankLoad then Break;
+      end;
+      Banks.Free;
     end;
-    Banks.Free;
+    if not BankLoad then
+    begin
+      Banks := TStringList.Create;
+      GetFiles(ExtractFilePath(FileName), '*.tim', Banks);
+      for I := 0 to Banks.Count - 1 do
+      begin
+        Bank := Banks[I];
+        BankLoad := MUS_LoadBank(Bank);
+        if BankLoad then Break;
+      end;
+      Banks.Free;
+    end;
+    if BankLoad then
+      Log.Lines.Add('[*] Loaded instrument bank: ' + Bank)
+    else
+      Log.Lines.Add('[*] Instrument bank file not found.');
   end;
-  if BankLoad then
-    Log.Lines.Add('[*] Loaded instrument bank: ' + Bank)
-  else
-    Log.Lines.Add('[*] Instrument bank file not found.');
+  if Container = 'ims' then
+    if F.Size < 70 + MIDILength + 2 + 2 then
+      Log.Lines.Add('[-] Instrument section not found.')
+    else
+    begin
+      F.Seek(70 + MIDILength, soFromBeginning);
+      F.ReadBuffer(W, 2);
+      if W <> $7777 then
+        Log.Lines.Add('[-] Instrument section has wrong signature.')
+      else
+      begin
+        F.ReadBuffer(W, 2);
+        if F.Size < 70 + MIDILength + 2 + 2 + W * 9 then
+          Log.Lines.Add('[-] Instrument section is truncated.')
+        else
+          for I := 0 to W - 1 do
+          begin
+            F.ReadBuffer(instName[0], 9);
+            SongData_PutStr('IMS_Name#'+IntToStr(I), String(PAnsiChar(@instName[0])));
+          end;
+      end;
+    end;
   Result := True;
   Log.Lines.Add('');
   Log.Lines.Add('[*] Information:');
@@ -4357,8 +4402,13 @@ var
   A: AnsiString;
   pad: Array[0..7] of Byte;
   MIDIData: TMemoryStream;
+  InstCnt: Word;
+  instName: Array[0..8] of AnsiChar;
 begin
-  Log.Lines.Add('[*] Writing AdLib MUS file...');
+  if EventProfile = 'ims' then
+    Log.Lines.Add('[*] Writing AdLib IMS file...')
+  else
+    Log.Lines.Add('[*] Writing AdLib MUS file...');
 
   if not SongData_GetInt('MUS_Version', I) then
     I := 1;
@@ -4450,12 +4500,34 @@ begin
 
   F.Seek(0, soFromEnd);
 
-  Log.Lines.Add('[*] Saving instrument bank file...');
-  Bank := ChangeFileExt(FileName, '.snd');
-  if not MUS_SaveBank(Bank) then
-    Log.Lines.Add('[-] Failed to save instrument bank file.')
-  else
-    Log.Lines.Add('[*] Saved instrument bank: ' + Bank);
+  if EventProfile = 'mus' then
+  begin
+    Log.Lines.Add('[*] Saving instrument bank file...');
+    Bank := ChangeFileExt(FileName, '.snd');
+    if not MUS_SaveBank(Bank) then
+      Log.Lines.Add('[-] Failed to save instrument bank file.')
+    else
+      Log.Lines.Add('[*] Saved instrument bank: ' + Bank);
+  end;
+  if EventProfile = 'ims' then
+  begin
+    I := $7777;
+    F.WriteBuffer(I, 2);
+    InstCnt := 0;
+    while SongData_GetStr('IMS_Name#'+IntToStr(InstCnt), S) do
+      Inc(InstCnt);
+    F.WriteBuffer(InstCnt, 2);
+    for I := 0 to InstCnt - 1 do
+    begin  
+      FillChar(instName, Length(instName), 0);
+      SongData_GetStr('IMS_Name#'+IntToStr(I), S);
+      A := AnsiString(S);
+      if Length(A) > 8 then
+        SetLength(A, 8);
+      Move(A[1], instName[0], Length(A));
+      F.WriteBuffer(instName, Length(instName));
+    end;
+  end;
 
   Progress.Position := 0;
 end;
@@ -8494,24 +8566,28 @@ begin
   MFormatXMI.Enabled := True;
   MFormatROL.Enabled := True;
   MFormatMUS.Enabled := True;
+  MFormatIMS.Enabled := True;
   MFormatMDI.Enabled := True;
   MFormatCMF.Enabled := True;
   MFormatMID.Checked := False;
   MFormatXMI.Checked := False;
   MFormatROL.Checked := False;
   MFormatMUS.Checked := False;
+  MFormatIMS.Checked := False;
   MFormatMDI.Checked := False;
   MFormatCMF.Checked := False;
   MProfileMID.Enabled := True;
   MProfileXMI.Enabled := True;
   MProfileROL.Enabled := True;
   MProfileMUS.Enabled := True;
+  MProfileIMS.Enabled := True;
   MProfileMDI.Enabled := True;
   MProfileCMF.Enabled := True;
   MProfileMID.Checked := False;
   MProfileXMI.Checked := False;
   MProfileROL.Checked := False;
   MProfileMUS.Checked := False;
+  MProfileIMS.Checked := False;
   MProfileMDI.Checked := False;
   MProfileCMF.Checked := False;
   if EventProfile = 'mid' then begin
@@ -8545,6 +8621,14 @@ begin
   if EventViewProfile = 'mus' then begin
     MProfileMUS.Checked := True;
     MProfileMUS.Enabled := False;
+  end;
+  if EventProfile = 'ims' then begin
+    MFormatIMS.Checked := True;
+    MFormatIMS.Enabled := False;
+  end;
+  if EventViewProfile = 'ims' then begin
+    MProfileIMS.Checked := True;
+    MProfileIMS.Enabled := False;
   end;
   if EventProfile = 'mdi' then begin
     MFormatMDI.Checked := True;
@@ -9352,8 +9436,9 @@ const
   PROFILE_XMI = 1;
   PROFILE_ROL = 2;
   PROFILE_MUS = 3;
-  PROFILE_MDI = 4;
-  PROFILE_CMF = 5;
+  PROFILE_IMS = 4;
+  PROFILE_MDI = 5;
+  PROFILE_CMF = 6;
 label
   play, loop, stop;
 var
@@ -9449,7 +9534,8 @@ var
               E.BParm2 := (E.Value shr 7) and $7F;
             end;
           end;
-      PROFILE_MUS: // AdLib MUS
+      PROFILE_MUS, // AdLib MUS
+      PROFILE_IMS: // AdLib IMS
       begin
         if E.Status shr 4 = $A then
         begin // Volume Change
@@ -9500,6 +9586,16 @@ var
         CMF_MIDIDrum(E)
       else
         ROL_MIDIDrum(E);
+
+    if (
+         (PlayerProfile = PROFILE_ROL)
+      or (PlayerProfile = PROFILE_MUS)
+      or (PlayerProfile = PROFILE_IMS)
+      or (PlayerProfile = PROFILE_CMF)
+    )
+    and (E.Status = $C9) then
+      E.Status := $F1; // Ignore event (prevent drum bank changing)
+
     Result := E;
   end;
   function PlayEvent(Trk: Integer; E: Command): Boolean;
@@ -9508,8 +9604,15 @@ var
     I: Integer;
   begin
     // Set VU Meters
-    if E.Status shr 4 = 9 then
-      PostMessage(MainForm.Handle, WM_SETVU, E.Status and $F, E.BParm2);
+    if PlayerProfile = PROFILE_IMS then
+    begin
+      if (E.Status shr 4 = 8)
+      or (E.Status shr 4 = 9) then
+        PostMessage(MainForm.Handle, WM_SETVU, E.Status and $F, E.BParm2);
+    end
+    else
+      if E.Status shr 4 = 9 then
+        PostMessage(MainForm.Handle, WM_SETVU, E.Status and $F, E.BParm2);
 
     if PlayerProfile <> PROFILE_MID then
       E := EventPreload(Trk, E);
@@ -9547,6 +9650,39 @@ var
                   midiOutShortMsg(MIDIOut, dwMsg);
                 end;
                 E.BParm2 := $7F;
+              end;
+            end;
+          end;
+        end;
+
+        PROFILE_IMS: // AdLib IMS
+        begin
+          if (E.Status shr 4 = 8)
+          and (E.BParm2 > 0) then
+          begin // Note Retrigger
+            if Length(Notes[E.Status and $F]) > 0 then
+            begin
+              dwMsg := $80 or (E.Status and $F) or (Notes[E.Status and $F][0].Note shl 8);
+              SetLength(Notes[E.Status and $F], 0);
+              midiOutShortMsg(MIDIOut, dwMsg);
+            end;
+            E.Status := $90 or (E.Status and $F);
+          end;
+          case E.Status shr 4 of
+            $9:
+            begin
+              if E.BParm2 > 0 then
+              begin
+                // Update Volume
+                if E.BParm2 <> Volumes[E.Status and $F] then
+                begin
+                  Volumes[E.Status and $F] := E.BParm2;
+                  dwMsg := $B0 or (E.Status and $F) or ($7 shl 8) or (E.BParm2 shl 16);
+                  midiOutShortMsg(MIDIOut, dwMsg);
+                end;
+                E.BParm2 := $7F;
+                SetLength(Notes[E.Status and $F], 1);
+                Notes[E.Status and $F][0].Note := E.BParm1;
               end;
             end;
           end;
@@ -9710,6 +9846,8 @@ begin
     PlayerProfile := PROFILE_ROL;
   if EventProfile = 'mus' then
     PlayerProfile := PROFILE_MUS;
+  if EventProfile = 'ims' then
+    PlayerProfile := PROFILE_IMS;
   if EventProfile = 'mdi' then
     PlayerProfile := PROFILE_MDI;
   if EventProfile = 'cmf' then
@@ -9719,7 +9857,8 @@ begin
   if PlayerProfile = PROFILE_ROL then
     if SongData_GetInt('ROL_Melodic', I) then
       Rhythm := I = 0;
-  if PlayerProfile = PROFILE_MUS then
+  if (PlayerProfile = PROFILE_MUS)
+  or (PlayerProfile = PROFILE_IMS) then
     if SongData_GetInt('MUS_Percussive', I) then
       Rhythm := I > 0;
   FillChar(Volumes, Length(Volumes), $FF);
@@ -9976,6 +10115,11 @@ begin
       EventFormat := 'mus';
       EventProfile := 'mus';
     end;
+    if (Ext = '.ims') then begin
+      Container := 'ims';
+      EventFormat := 'mus';
+      EventProfile := 'ims';
+    end;
     if (Ext = '.raw') then begin
       Container := 'raw';
       EventFormat := 'mid';
@@ -10028,6 +10172,11 @@ begin
       EventFormat := 'mus';
       EventProfile := 'mus';
     end;
+    if Fmt = 'ims' then begin
+      Container := 'ims';
+      EventFormat := 'mus';
+      EventProfile := 'ims';
+    end;
     if Fmt = 'raw' then begin
       Container := 'raw';
       EventFormat := 'mid';
@@ -10078,6 +10227,9 @@ begin
       Opened := ReadROL(M, FileName);
     end;
     if Container = 'mus' then begin
+      Opened := ReadMUS(M, FileName);
+    end;
+    if Container = 'ims' then begin
       Opened := ReadMUS(M, FileName);
     end;
     if Container = 'raw' then begin
@@ -10147,6 +10299,12 @@ begin
     TargetEventFormat := 'mus';
     TargetEventProfile := 'mus';
   end;
+  if (Ext = '.ims')
+  then begin
+    TargetContainer := 'ims';
+    TargetEventFormat := 'mus';
+    TargetEventProfile := 'ims';
+  end;
   if (Ext = '.cmf')
   then begin
     TargetContainer := 'cmf';
@@ -10208,6 +10366,14 @@ begin
   if TargetContainer = 'mus' then begin
     if TargetEventProfile = 'mus' then
       ConvertEvents('mus');
+    WriteMUS(M, FileName);
+    Result := True;
+  end;
+  if TargetContainer = 'ims' then begin
+    if TargetEventFormat = 'mus' then
+      EventFormat := 'mus';
+    if TargetEventProfile = 'ims' then
+      ConvertEvents('ims');
     WriteMUS(M, FileName);
     Result := True;
   end;
@@ -10329,6 +10495,8 @@ begin
       Fmt := 'rol';
     if Pos('*.mus', FilterExt) > 0 then
       Fmt := 'mus';
+    if Pos('*.ims', FilterExt) > 0 then
+      Fmt := 'ims';
     if Pos('*.mdi', FilterExt) > 0 then
       Fmt := 'mdi';
     if Pos('*.raw', FilterExt) > 0 then
@@ -10775,13 +10943,26 @@ begin
   ChkButtons;
 end;
 
+procedure TMainForm.MFormatIMSClick(Sender: TObject);
+var
+  Idx: Integer;
+begin
+  Idx := TrkCh.ItemIndex;
+  ConvertEvents('ims');
+  RefTrackList;
+  TrkCh.ItemIndex := Idx;
+  FillEvents(TrkCh.ItemIndex);
+  CalculateEvnts;
+  ChkButtons;
+end;
+
 procedure TMainForm.FillEvents(Idx: Integer);
 var
   I,J: Integer;
   S: String;
   Speed: Double;
   Fl: Single;
-  Rhythm: Boolean;
+  Rhythm, Bl: Boolean;
   InitTempo: Cardinal;
 begin
   if (Idx < 0) or (Idx >= Length(TrackData)) then
@@ -10819,7 +11000,8 @@ begin
   if EventViewProfile = 'rol' then
     if SongData_GetInt('ROL_Melodic', I) then
       Rhythm := I = 0;
-  if EventViewProfile = 'mus' then
+  if (EventViewProfile = 'mus')
+  or (EventViewProfile = 'ims') then
     if SongData_GetInt('MUS_Percussive', I) then
       Rhythm := I > 0;
 
@@ -11164,10 +11346,15 @@ begin
       end;
     end;
 
-    if EventViewProfile = 'mus' then begin
+    if (EventViewProfile = 'mus')
+    or (EventViewProfile = 'ims')
+    then begin
       case TrackData[Idx].Data[I].Status shr 4 of
         8: // Note Off
         begin
+          if (EventViewProfile = 'ims')
+          and (TrackData[Idx].Data[I].BParm2 > 0) then
+            Events.Cells[3,I+1] := 'Note Retrigger';
           Events.Cells[4,I+1]:='Note = '+IntToStr(TrackData[Idx].Data[I].BParm1)+
           ' ('+NoteNum(TrackData[Idx].Data[I].BParm1)+
           '), velocity = '+IntToStr(TrackData[Idx].Data[I].BParm2);
@@ -11213,7 +11400,12 @@ begin
           Events.Cells[4,I+1] :=
           'Instrument = ' + IntToStr(TrackData[Idx].Data[I].BParm1);
           S := '';
-          if SongData_GetStr('SND_Name#'+IntToStr(TrackData[Idx].Data[I].BParm1), S) then
+          Bl := False;
+          if (EventViewProfile = 'mus') then
+            Bl := SongData_GetStr('SND_Name#'+IntToStr(TrackData[Idx].Data[I].BParm1), S);
+          if (EventViewProfile = 'ims') then
+            Bl := SongData_GetStr('IMS_Name#'+IntToStr(TrackData[Idx].Data[I].BParm1), S);
+          if Bl then
             Events.Cells[4,I+1] := Events.Cells[4,I+1] + ' (' + S + ')';
         end;
         15: // System
@@ -11482,6 +11674,13 @@ begin
     or (LowerCase(ExtractFileExt(FileName)) <> '.mus')
     then
       FileName := FileName + '.mus';
+  end;
+  if Pos('*.ims', FilterExt) > 0 then
+  begin
+    if (ExtractFileExt(FileName) = '')
+    or (LowerCase(ExtractFileExt(FileName)) <> '.ims')
+    then
+      FileName := FileName + '.ims';
   end;
   if Pos('*.mdi', FilterExt) > 0 then
   begin
@@ -12291,6 +12490,14 @@ end;
 procedure TMainForm.MProfileMUSClick(Sender: TObject);
 begin
   EventViewProfile := 'mus';
+  FillEvents(TrkCh.ItemIndex);
+  CalculateEvnts;
+  ChkButtons;
+end;
+
+procedure TMainForm.MProfileIMSClick(Sender: TObject);
+begin
+  EventViewProfile := 'ims';
   FillEvents(TrkCh.ItemIndex);
   CalculateEvnts;
   ChkButtons;
