@@ -5,7 +5,8 @@ interface
 uses
   Windows, Messages, SysUtils, Variants, Classes, Graphics, Controls, Forms,
   Dialogs, ExtCtrls, ComCtrls, StdCtrls, MIDIConsts, Grids, Math, Menus, Buttons,
-  ActnList, MultiDialog, ClipBrd, MMSystem, ValEdit, IFFTrees, Generics.Collections;
+  ActnList, MultiDialog, ClipBrd, MMSystem, ValEdit, IFFTrees, ShellAPI,
+  Generics.Collections;
 
 const
   WM_EVENTIDX = WM_USER + 110;
@@ -492,6 +493,7 @@ type
     procedure OnTrackChange(var Msg: TMessage); message WM_TRACKIDX;
     procedure OnVUChange(var Msg: TMessage); message WM_SETVU;
     procedure OnPlayerChange(var Msg: TMessage); message WM_PLAYCTRL;
+    procedure OnDropFiles(var Msg: TWMDropFiles); message WM_DROPFILES;
   public
     { Public declarations }
     function LoadFile(FileName, Fmt: String): Boolean;
@@ -10086,6 +10088,29 @@ begin
   end;
 end;
 
+procedure TMainForm.OnDropFiles(var Msg: TWMDropFiles);
+const
+  MAXFILENAME = 255;
+var
+  Count: Integer;
+  FileName: Array[0..MAXFILENAME] of Char;
+begin
+  Count := DragQueryFile(Msg.Drop, $FFFFFFFF, FileName, MAXFILENAME);
+  if (Count <= 0) or (Count > 1) then
+    Exit;
+  DragQueryFile(Msg.Drop, 0, FileName, MAXFILENAME);
+
+  Log.Clear;
+  LoadFile(FileName, '');
+  if TrkCh.Items.Count > 0 then begin
+    TrkCh.ItemIndex := 0;
+    FillEvents(TrkCh.ItemIndex);
+  end;
+  ChkButtons;
+
+  DragFinish(Msg.Drop);
+end;
+
 procedure MIDIPlayer; stdcall;
 const
   PROFILE_MID = 0;
@@ -11194,6 +11219,8 @@ begin
   Filter.Free;
   OpenDialog.Filter :=
     StringReplace(OpenDialog.Filter, '||', '|'+AllStr+'|', []);
+
+  DragAcceptFiles(Handle, True);
 
   SearchEv.dtOp := 0;
   SearchEv.dt := 0;
