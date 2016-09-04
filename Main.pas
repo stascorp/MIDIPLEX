@@ -53,6 +53,12 @@ type
     v2: Word;
     Text: String;
   end;
+  TPlaySet = record
+    SetPos: Boolean;
+    TrackIdx,
+    EventIdx: Integer;
+  end;
+  PPlaySet = ^TPlaySet;
   TTicksDict = TDictionary<UInt64, Cardinal>;
   TTicksPair = TPair<UInt64, Cardinal>;
   TEventDict = TDictionary<ShortInt, Cardinal>;
@@ -306,6 +312,7 @@ type
     MStats: TMenuItem;
     MFormatIMS: TMenuItem;
     MProfileIMS: TMenuItem;
+    bPlayPos: TBitBtn;
     procedure BtOpenClick(Sender: TObject);
     procedure FormCreate(Sender: TObject);
     procedure TrkChChange(Sender: TObject);
@@ -487,6 +494,7 @@ type
     procedure MW32RefreshClick(Sender: TObject);
     procedure MW32MapperClick(Sender: TObject);
     procedure MOutConfClick(Sender: TObject);
+    procedure bPlayPosClick(Sender: TObject);
   private
     { Private declarations }
     procedure OnEventChange(var Msg: TMessage); message WM_EVENTIDX;
@@ -9135,6 +9143,7 @@ begin
   MSave.Enabled := Opened;
   MSaveAs.Enabled := Opened;
   bPlay.Enabled := Opened and (MIDIThrId = 0);
+  bPlayPos.Enabled := Opened and (MIDIThrId = 0);
   bStop.Enabled := Opened and (MIDIThrId > 0);
   MDelTrack.Enabled := Length(TrackData) > 0;
   BDelTrack.Enabled := Length(TrackData) > 0;
@@ -10078,11 +10087,13 @@ begin
     PLAYER_PLAY:
     begin
       bPlay.Enabled := False;
+      bPlayPos.Enabled := False;
       bStop.Enabled := True;
     end;
     PLAYER_STOP:
     begin
       bPlay.Enabled := True;
+      bPlayPos.Enabled := True;
       bStop.Enabled := False;
     end;
   end;
@@ -10111,7 +10122,7 @@ begin
   DragFinish(Msg.Drop);
 end;
 
-procedure MIDIPlayer; stdcall;
+procedure MIDIPlayer(Param: PPlaySet);
 const
   PROFILE_MID = 0;
   PROFILE_XMI = 1;
@@ -10123,6 +10134,7 @@ const
 label
   play, loop, stop;
 var
+  PlaySet: TPlaySet;
   Ver, Division: Word;
   InitTempo, Tempo: Cardinal;
   SecDelay: Double;
@@ -10133,7 +10145,7 @@ var
   LoopStartTrack: Integer;
   Data: Array of Array of Command;
   DPos: Array of Integer;
-  I, J, Idx: Integer;
+  I, J, K: Integer;
   NoEvents, LoopReq, Rhythm: Boolean;
   PlayerProfile: Byte;
   Notes: Array[0..15] of Array of record
@@ -10546,10 +10558,11 @@ begin
   if not SongData_GetWord('Division', Division) then
     Division := 96;
 
+  PlaySet := Param^;
+  Dispose(Param);
+
   if Length(TrackData) = 0 then
     goto stop;
-
-  Idx := MainForm.TrkCh.ItemIndex;
 
   SetLength(Data, Length(TrackData));
   SetLength(DPos, Length(Data));
@@ -10592,14 +10605,17 @@ begin
   if not QueryPerformanceFrequency(lpFrequency) then
     goto stop; // QueryPerformanceFrequency failed
 
-  I := 0;
+  if not PlaySet.SetPos then
+    I := 0
+  else
+    I := PlaySet.TrackIdx;
   LoopReq := False;
   LoopStartTick := 0;
   LoopStartTrack := I;
   case Ver of
     0:
     begin
-      I := Idx;
+      I := PlaySet.TrackIdx;
       if (I < 0) or (I >= Length(Data)) then
         I := 0;
       LoopStartTrack := I;
@@ -10610,6 +10626,30 @@ begin
   end;
   TickCounter := 0;
   TickPos := 0;
+
+  if PlaySet.SetPos then
+    case Ver of
+      0, 2: // MIDI Type-0, Type-2
+      begin
+        TickPos := Data[PlaySet.TrackIdx][PlaySet.EventIdx].Ticks;
+        DPos[PlaySet.TrackIdx] := PlaySet.EventIdx;
+      end;
+      1: // MIDI Type-1
+      begin
+        TickPos := Data[PlaySet.TrackIdx][PlaySet.EventIdx].Ticks;
+        for J := 0 to Length(Data) - 1 do
+        begin
+          DPos[J] := Length(Data[J]);
+          for K := 0 to Length(Data[J]) - 1 do
+            if Data[J][K].Ticks >= TickPos then
+            begin
+              DPos[J] := K;
+              Break;
+            end;
+        end;
+      end;
+    end;
+
   if not QueryPerformanceCounter(lpPerfomanceCountStart) then
     goto stop; // QueryPerformanceCounter failed
 play:
@@ -10673,6 +10713,7 @@ play:
           else
           begin
             DPos[I] := 0;
+            TickPos := 0;
             if DPos[I] < Length(Data[I]) then
               PostMessage(MainForm.Handle, WM_TRACKIDX, I, 0);
           end;
@@ -10708,7 +10749,7 @@ loop:
     case Ver of
       0:
       begin
-        I := Idx;
+        I := PlaySet.TrackIdx;
         J := 0;
         while (J < Length(Data[I]))
         and (Data[I][J].Ticks < LoopStartTick) do
@@ -10753,6 +10794,7 @@ var
   NewMIDIOut: THandle;
   Ver, Division: Word;
   InitTempo: Cardinal;
+  PlaySet: PPlaySet;
 begin
   if Length(TrackData) = 0 then
     Exit;
@@ -10779,7 +10821,53 @@ begin
 
   SendMessage(Handle, WM_PLAYCTRL, PLAYER_PLAY, 0);
 
-  MIDIThr := BeginThread(nil, 0, @MIDIPlayer, nil, CREATE_SUSPENDED, MIDIThrId);
+  New(PlaySet);
+  PlaySet^.SetPos := False;
+  PlaySet^.TrackIdx := TrkCh.ItemIndex;
+  PlaySet^.EventIdx := Events.Row - 1;
+  MIDIThr := BeginThread(nil, 0, @MIDIPlayer, PlaySet, CREATE_SUSPENDED, MIDIThrId);
+  SetThreadPriority(MIDIThr, THREAD_PRIORITY_HIGHEST);
+  ResumeThread(MIDIThr);
+end;
+
+procedure TMainForm.bPlayPosClick(Sender: TObject);
+var
+  Err: DWORD;
+  NewMIDIOut: THandle;
+  Ver, Division: Word;
+  InitTempo: Cardinal;
+  PlaySet: PPlaySet;
+begin
+  if Length(TrackData) = 0 then
+    Exit;
+  if not SongData_GetWord('MIDIType', Ver) then
+  begin
+    Log.Lines.Add('[-] MIDI Type is not defined.');
+    Exit;
+  end;
+  if not SongData_GetDWord('InitTempo', InitTempo) then
+  begin
+    Log.Lines.Add('[-] Initial Tempo is not defined.');
+    Exit;
+  end;
+  if not SongData_GetWord('Division', Division) then
+  begin
+    Log.Lines.Add('[-] Division is not defined.');
+    Exit;
+  end;
+
+  Err := midiOutOpen(@NewMIDIOut, MIDIDev, 0, 0, CALLBACK_NULL);
+  if Err <> MMSYSERR_NOERROR then
+    Exit;
+  MIDIOut := NewMIDIOut;
+
+  SendMessage(Handle, WM_PLAYCTRL, PLAYER_PLAY, 0);
+
+  New(PlaySet);
+  PlaySet^.SetPos := True;
+  PlaySet^.TrackIdx := TrkCh.ItemIndex;
+  PlaySet^.EventIdx := Events.Row - 1;
+  MIDIThr := BeginThread(nil, 0, @MIDIPlayer, PlaySet, CREATE_SUSPENDED, MIDIThrId);
   SetThreadPriority(MIDIThr, THREAD_PRIORITY_HIGHEST);
   ResumeThread(MIDIThr);
 end;
