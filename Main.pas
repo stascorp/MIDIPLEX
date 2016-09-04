@@ -10180,6 +10180,35 @@ var
       if midiOutLongMsg(MIDIOut, @MIDIData, SizeOf(MIDIData)) <> MMSYSERR_NOERROR then
         Result := False;
   end;
+  procedure PerTickProcess();
+  var
+    I, J, K: Integer;
+    dwMsg: DWord;
+  begin
+    case PlayerProfile of
+      PROFILE_XMI:
+        for I := 0 to 15 do
+        begin // Turn off needed Notes
+          J := 0;
+          while J < Length(Notes[I]) do
+          begin
+            if Notes[I][J].Tick = 0 then
+              Continue;
+            if Notes[I][J].Tick > TickCounter then
+              Break;
+            dwMsg := $90 or I or (Notes[I][J].Note shl 8);
+            midiOutShortMsg(MIDIOut, dwMsg);
+            Inc(J);
+          end;
+          if J > 0 then
+          begin // Remove from array
+            for K := J to Length(Notes[I]) - 1 do
+              Notes[I][K - J] := Notes[I][K];
+            SetLength(Notes[I], Length(Notes[I]) - J);
+          end;
+        end;
+    end;
+  end;
   function EventPreload(Trk: Integer; E: Command): Command;
   var
     Fl: Single;
@@ -10443,6 +10472,22 @@ var
               end;
             end;
           end;
+
+          PROFILE_XMI: // Miles XMIDI
+          begin
+            // Store Note to off it when needed
+            if (E.Status shr 4 = 9) and (E.BParm2 > 0) then
+            begin
+              // Check whether Note is already on
+              for I := 0 to Length(Notes[E.Status and $F]) - 1 do
+                if Notes[E.Status and $F][I].Note = E.BParm1 then
+                  Notes[E.Status and $F][I].Tick := 0; // Mark to ignore
+              // Store new Note with stop time
+              SetLength(Notes[E.Status and $F], Length(Notes[E.Status and $F]) + 1);
+              Notes[E.Status and $F][High(Notes[E.Status and $F])].Note := E.BParm1;
+              Notes[E.Status and $F][High(Notes[E.Status and $F])].Tick := TickCounter + E.Len;
+            end;
+          end;
         end;
 
       // Detect loop start
@@ -10570,6 +10615,8 @@ begin
 play:
   while MIDIThrId > 0 do
   begin
+    if PlayerProfile = PROFILE_XMI then
+      PerTickProcess();
     case Ver of
       0: // MIDI Type-0
       begin
