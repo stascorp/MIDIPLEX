@@ -10145,7 +10145,7 @@ var
   LoopStartTrack: Integer;
   Data: Array of Array of Command;
   DPos: Array of Integer;
-  I, J, K: Integer;
+  I, J: Integer;
   NoEvents, LoopReq, Rhythm: Boolean;
   PlayerProfile: Byte;
   Notes: Array[0..15] of Array of record
@@ -10627,26 +10627,38 @@ begin
   TickCounter := 0;
   TickPos := 0;
 
-  if PlaySet.SetPos then
+  if PlaySet.SetPos then // Seek to position
     case Ver of
       0, 2: // MIDI Type-0, Type-2
       begin
+        // Preload non-note events
+        if PlaySet.EventIdx > 0 then
+          for J := 0 to PlaySet.EventIdx - 1 do
+            if Data[PlaySet.TrackIdx][J].Status shr 4 >= $A then
+              PlayEvent(PlaySet.TrackIdx, Data[PlaySet.TrackIdx][J]);
+        // Set tick and event positions
         TickPos := Data[PlaySet.TrackIdx][PlaySet.EventIdx].Ticks;
         DPos[PlaySet.TrackIdx] := PlaySet.EventIdx;
       end;
       1: // MIDI Type-1
       begin
-        TickPos := Data[PlaySet.TrackIdx][PlaySet.EventIdx].Ticks;
-        for J := 0 to Length(Data) - 1 do
+        // Preload non-note events
+        TickPos := 0;
+        while TickPos < Data[PlaySet.TrackIdx][PlaySet.EventIdx].Ticks do
         begin
-          DPos[J] := Length(Data[J]);
-          for K := 0 to Length(Data[J]) - 1 do
-            if Data[J][K].Ticks >= TickPos then
+          for J := 0 to Length(Data) - 1 do
+            while (DPos[J] < Length(Data[J]))
+            and (Data[J][DPos[J]].Ticks <= TickPos) do
             begin
-              DPos[J] := K;
-              Break;
+              if Data[J][DPos[J]].Status shr 4 >= $A then
+                PlayEvent(PlaySet.TrackIdx, Data[J][DPos[J]]);
+              // All event positions will be correct after loop
+              Inc(DPos[J]);
             end;
+          Inc(TickPos);
         end;
+        // Set tick position
+        TickPos := Data[PlaySet.TrackIdx][PlaySet.EventIdx].Ticks;
       end;
     end;
 
