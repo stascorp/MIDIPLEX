@@ -509,6 +509,7 @@ type
     procedure MOutConfClick(Sender: TObject);
     procedure bPlayPosClick(Sender: TObject);
     procedure bStepClick(Sender: TObject);
+    procedure panVisualResize(Sender: TObject);
   private
     { Private declarations }
     procedure OnEventChange(var Msg: TMessage); message WM_EVENTIDX;
@@ -14269,6 +14270,14 @@ begin
         Dec(VU[I], FallSpeed);
     end;
   end;
+end;
+
+procedure TMainForm.panVisualResize(Sender: TObject);
+begin
+  imgVU.Canvas.Pen.Color := clBlack;
+  imgVU.Canvas.Brush.Color := clBlack;
+  imgVU.Picture.Bitmap.Width := imgVU.Width;
+  imgVU.Picture.Bitmap.Height := imgVU.Height;
 end;
 
 end.

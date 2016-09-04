@@ -268,7 +268,10 @@ object MainForm: TMainForm
       Height = 129
       Align = alRight
       BevelOuter = bvLowered
+      DoubleBuffered = True
+      ParentDoubleBuffered = False
       TabOrder = 2
+      OnResize = panVisualResize
       object imgVU: TImage
         Left = 1
         Top = 1
