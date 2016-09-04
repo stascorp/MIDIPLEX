@@ -10945,7 +10945,7 @@ var
   NewMIDIOut: THandle;
   PlaySet: PPlaySet;
 begin
-  if MIDIThrId > 0 then
+  if (MIDIThrId > 0) and (not gStepEvent.Send) then
   begin
     gStepEvent.TrackIdx := TrkCh.ItemIndex;
     gStepEvent.EventIdx := Events.Row - 1;
@@ -10956,6 +10956,14 @@ begin
 
   if Length(TrackData) = 0 then
     Exit;
+
+  if not gStepEvent.Send then
+  begin
+    gStepEvent.TrackIdx := TrkCh.ItemIndex;
+    gStepEvent.EventIdx := Events.Row - 1;
+    gStepEvent.E := TrackData[gStepEvent.TrackIdx].Data[gStepEvent.EventIdx];
+    gStepEvent.Send := True;
+  end;
 
   Err := midiOutOpen(@NewMIDIOut, MIDIDev, 0, 0, CALLBACK_NULL);
   if Err <> MMSYSERR_NOERROR then
