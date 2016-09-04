@@ -13,7 +13,11 @@ const
   WM_TRACKIDX = WM_USER + 111;
   WM_SETVU = WM_USER + 112;
   WM_PLAYCTRL = WM_USER + 113;
+  WM_EVENTREQ = WM_USER + 120;
 
+  PLAY_DEF  = 0;
+  PLAY_POS  = 1;
+  PLAY_STEP = 2;
   PLAYER_PLAY = 1;
   PLAYER_STOP = 2;
 
@@ -54,11 +58,18 @@ type
     Text: String;
   end;
   TPlaySet = record
-    SetPos: Boolean;
+    Mode: Byte;
     TrackIdx,
     EventIdx: Integer;
   end;
   PPlaySet = ^TPlaySet;
+  TStepEvent = record
+    Send: Boolean;
+    E: Command;
+    TrackIdx,
+    EventIdx: Integer;
+  end;
+  PStepEvent = ^TStepEvent;
   TTicksDict = TDictionary<UInt64, Cardinal>;
   TTicksPair = TPair<UInt64, Cardinal>;
   TEventDict = TDictionary<ShortInt, Cardinal>;
@@ -313,6 +324,8 @@ type
     MFormatIMS: TMenuItem;
     MProfileIMS: TMenuItem;
     bPlayPos: TBitBtn;
+    bStep: TBitBtn;
+    panVert1: TPanel;
     procedure BtOpenClick(Sender: TObject);
     procedure FormCreate(Sender: TObject);
     procedure TrkChChange(Sender: TObject);
@@ -495,12 +508,14 @@ type
     procedure MW32MapperClick(Sender: TObject);
     procedure MOutConfClick(Sender: TObject);
     procedure bPlayPosClick(Sender: TObject);
+    procedure bStepClick(Sender: TObject);
   private
     { Private declarations }
     procedure OnEventChange(var Msg: TMessage); message WM_EVENTIDX;
     procedure OnTrackChange(var Msg: TMessage); message WM_TRACKIDX;
     procedure OnVUChange(var Msg: TMessage); message WM_SETVU;
     procedure OnPlayerChange(var Msg: TMessage); message WM_PLAYCTRL;
+    procedure OnEventRequest(var Msg: TMessage); message WM_EVENTREQ;
     procedure OnDropFiles(var Msg: TWMDropFiles); message WM_DROPFILES;
   public
     { Public declarations }
@@ -597,7 +612,9 @@ var
   MIDIOut: HMIDIOUT;
   MIDIThr: THandle;
   MIDIThrId: Cardinal;
+  PlayerMode: Byte;
   LoopEnabled: Boolean = False;
+  gStepEvent: TStepEvent;
   // Visual
   vFS: TFormatSettings;
   vChangeEvent: Boolean = False;
@@ -9145,6 +9162,7 @@ begin
   bPlay.Enabled := Opened and (MIDIThrId = 0);
   bPlayPos.Enabled := Opened and (MIDIThrId = 0);
   bStop.Enabled := Opened and (MIDIThrId > 0);
+  bStep.Enabled := Opened and ((MIDIThrId = 0) or (PlayerMode = PLAY_STEP));
   MDelTrack.Enabled := Length(TrackData) > 0;
   BDelTrack.Enabled := Length(TrackData) > 0;
   Label1.Enabled := Length(TrackData) > 0;
@@ -10089,14 +10107,26 @@ begin
       bPlay.Enabled := False;
       bPlayPos.Enabled := False;
       bStop.Enabled := True;
+      bStep.Enabled := PlayerMode = PLAY_STEP;
     end;
     PLAYER_STOP:
     begin
       bPlay.Enabled := True;
       bPlayPos.Enabled := True;
       bStop.Enabled := False;
+      bStep.Enabled := True;
     end;
   end;
+end;
+
+procedure TMainForm.OnEventRequest(var Msg: TMessage);
+var
+  StepEvent: PStepEvent;
+begin
+  New(StepEvent);
+  StepEvent^ := gStepEvent;
+  Pointer(Pointer(Msg.WParam)^) := StepEvent;
+  gStepEvent.Send := False;
 end;
 
 procedure TMainForm.OnDropFiles(var Msg: TWMDropFiles);
@@ -10153,6 +10183,8 @@ var
     Tick: UInt64;
   end;
   Volumes: Array[0..15] of Byte;
+  StepPtr: Pointer;
+  StepEvent: PStepEvent;
 
   procedure UpdateTempo(Value: Cardinal);
   begin
@@ -10564,15 +10596,18 @@ begin
   if Length(TrackData) = 0 then
     goto stop;
 
-  SetLength(Data, Length(TrackData));
-  SetLength(DPos, Length(Data));
-  for I := 0 to Length(Data) - 1 do
+  if PlaySet.Mode <> PLAY_STEP then
   begin
-    SetLength(Data[I], Length(TrackData[I].Data));
-    for J := 0 to Length(Data[I]) - 1 do
-      Data[I][J] := TrackData[I].Data[J];
-    MainForm.ConvertTicks(True, Data[I]);
-    DPos[I] := 0;
+    SetLength(Data, Length(TrackData));
+    SetLength(DPos, Length(Data));
+    for I := 0 to Length(Data) - 1 do
+    begin
+      SetLength(Data[I], Length(TrackData[I].Data));
+      for J := 0 to Length(Data[I]) - 1 do
+        Data[I][J] := TrackData[I].Data[J];
+      MainForm.ConvertTicks(True, Data[I]);
+      DPos[I] := 0;
+    end;
   end;
 
   Tempo := InitTempo;
@@ -10605,7 +10640,7 @@ begin
   if not QueryPerformanceFrequency(lpFrequency) then
     goto stop; // QueryPerformanceFrequency failed
 
-  if not PlaySet.SetPos then
+  if PlaySet.Mode = PLAY_DEF then
     I := 0
   else
     I := PlaySet.TrackIdx;
@@ -10627,7 +10662,7 @@ begin
   TickCounter := 0;
   TickPos := 0;
 
-  if PlaySet.SetPos then // Seek to position
+  if PlaySet.Mode = PLAY_POS then // Seek to position
     case Ver of
       0, 2: // MIDI Type-0, Type-2
       begin
@@ -10669,6 +10704,23 @@ play:
   begin
     if PlayerProfile = PROFILE_XMI then
       PerTickProcess();
+    if PlaySet.Mode = PLAY_STEP then
+    begin // Play events step by step on button click
+      SendMessage(MainForm.Handle, WM_EVENTREQ, wParam(@StepPtr), 0);
+      StepEvent := Pointer(StepPtr);
+      if StepEvent^.Send then
+      begin
+        if not PlayEvent(StepEvent^.TrackIdx, StepEvent^.E) then
+        begin
+          Dispose(StepEvent);
+          goto stop;
+        end;
+        PostMessage(MainForm.Handle, WM_EVENTIDX, StepEvent^.EventIdx + 1, StepEvent^.TrackIdx);
+      end;
+      Dispose(StepEvent);
+      Sleep(1);
+      Continue;
+    end;
     case Ver of
       0: // MIDI Type-0
       begin
@@ -10754,7 +10806,7 @@ play:
     until lpPerfomanceCount - lpPerfomanceCountStart >= lpFrequency * SecDelay * TickCounter;
   end;
 loop:
-  if (MIDIThrId > 0) and LoopEnabled then
+  if (MIDIThrId > 0) and (PlaySet.Mode <> PLAY_STEP) and LoopEnabled then
   begin
     LoopReq := False;
     I := 0;
@@ -10831,12 +10883,14 @@ begin
     Exit;
   MIDIOut := NewMIDIOut;
 
+  PlayerMode := PLAY_DEF;
   SendMessage(Handle, WM_PLAYCTRL, PLAYER_PLAY, 0);
 
   New(PlaySet);
-  PlaySet^.SetPos := False;
+  PlaySet^.Mode := PlayerMode;
   PlaySet^.TrackIdx := TrkCh.ItemIndex;
   PlaySet^.EventIdx := Events.Row - 1;
+  PlayerMode := PlaySet^.Mode;
   MIDIThr := BeginThread(nil, 0, @MIDIPlayer, PlaySet, CREATE_SUSPENDED, MIDIThrId);
   SetThreadPriority(MIDIThr, THREAD_PRIORITY_HIGHEST);
   ResumeThread(MIDIThr);
@@ -10873,12 +10927,46 @@ begin
     Exit;
   MIDIOut := NewMIDIOut;
 
+  PlayerMode := PLAY_POS;
   SendMessage(Handle, WM_PLAYCTRL, PLAYER_PLAY, 0);
 
   New(PlaySet);
-  PlaySet^.SetPos := True;
+  PlaySet^.Mode := PlayerMode;
   PlaySet^.TrackIdx := TrkCh.ItemIndex;
   PlaySet^.EventIdx := Events.Row - 1;
+  MIDIThr := BeginThread(nil, 0, @MIDIPlayer, PlaySet, CREATE_SUSPENDED, MIDIThrId);
+  SetThreadPriority(MIDIThr, THREAD_PRIORITY_HIGHEST);
+  ResumeThread(MIDIThr);
+end;
+
+procedure TMainForm.bStepClick(Sender: TObject);
+var
+  Err: DWORD;
+  NewMIDIOut: THandle;
+  PlaySet: PPlaySet;
+begin
+  if MIDIThrId > 0 then
+  begin
+    gStepEvent.TrackIdx := TrkCh.ItemIndex;
+    gStepEvent.EventIdx := Events.Row - 1;
+    gStepEvent.E := TrackData[gStepEvent.TrackIdx].Data[gStepEvent.EventIdx];
+    gStepEvent.Send := True;
+    Exit;
+  end;
+
+  if Length(TrackData) = 0 then
+    Exit;
+
+  Err := midiOutOpen(@NewMIDIOut, MIDIDev, 0, 0, CALLBACK_NULL);
+  if Err <> MMSYSERR_NOERROR then
+    Exit;
+  MIDIOut := NewMIDIOut;
+
+  PlayerMode := PLAY_STEP;
+  SendMessage(Handle, WM_PLAYCTRL, PLAYER_PLAY, 0);
+
+  New(PlaySet);
+  PlaySet^.Mode := PlayerMode;
   MIDIThr := BeginThread(nil, 0, @MIDIPlayer, PlaySet, CREATE_SUSPENDED, MIDIThrId);
   SetThreadPriority(MIDIThr, THREAD_PRIORITY_HIGHEST);
   ResumeThread(MIDIThr);
