@@ -301,6 +301,7 @@ object MainForm: TMainForm
         Bevel = pbNone
         Width = 50
       end>
+    OnResize = StatusBarResize
   end
   object Events: TStringGrid
     Left = 25
@@ -322,8 +323,6 @@ object MainForm: TMainForm
     OnDblClick = BEditEvntClick
     OnKeyPress = EventsKeyPress
     OnMouseUp = EventsMouseUp
-    ExplicitTop = 188
-    ExplicitHeight = 315
   end
   object panLeft: TPanel
     Left = 0
@@ -333,8 +332,6 @@ object MainForm: TMainForm
     Align = alLeft
     BevelOuter = bvNone
     TabOrder = 1
-    ExplicitTop = 188
-    ExplicitHeight = 315
     object BAddEvnt: TSpeedButton
       Left = 0
       Top = 0

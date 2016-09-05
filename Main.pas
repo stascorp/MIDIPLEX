@@ -510,6 +510,7 @@ type
     procedure bPlayPosClick(Sender: TObject);
     procedure bStepClick(Sender: TObject);
     procedure panVisualResize(Sender: TObject);
+    procedure StatusBarResize(Sender: TObject);
   private
     { Private declarations }
     procedure OnEventChange(var Msg: TMessage); message WM_EVENTIDX;
@@ -11478,6 +11479,14 @@ begin
   SearchEv.v2 := 127;
   SearchEv.Text := '';
 
+  with Progress do
+  begin
+    Parent := StatusBar;
+    Top := 2;
+    Left := StatusBar.Panels[0].Width + StatusBar.Panels[1].Width + 1 * 2;
+    Height := StatusBar.Height - Top;
+    Width := StatusBar.ClientWidth - Left - 17;
+  end;
   MW32RefreshClick(Sender);
   ChkButtons;
 
@@ -11543,12 +11552,13 @@ end;
 
 procedure TMainForm.FormResize(Sender: TObject);
 begin
-  if ClientWidth-300>=0 then
-    Progress.Width:=ClientWidth-300
-  else
-    Progress.Width:=0;
-  Progress.Top:=ClientHeight-17;
   panToolbar.Width := panMiddle.Width;
+end;
+
+procedure TMainForm.StatusBarResize(Sender: TObject);
+begin
+  with Progress do
+    Width := StatusBar.ClientWidth - Left - 17;
 end;
 
 procedure TMainForm.TrkChChange(Sender: TObject);
