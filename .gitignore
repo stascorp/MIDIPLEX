@@ -10,3 +10,6 @@ __history/
 *.dcu
 *.exe
 *.res
+
+# Program settings
+MIDIPLEX.ini

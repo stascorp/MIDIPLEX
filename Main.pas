@@ -5,7 +5,7 @@ interface
 uses
   Windows, Messages, SysUtils, Variants, Classes, Graphics, Controls, Forms,
   Dialogs, ExtCtrls, ComCtrls, StdCtrls, MIDIConsts, Grids, Math, Menus, Buttons,
-  ActnList, MultiDialog, ClipBrd, MMSystem, ValEdit, IFFTrees, ShellAPI,
+  ActnList, MultiDialog, ClipBrd, MMSystem, ValEdit, IFFTrees, ShellAPI, IniFiles,
   Generics.Collections;
 
 const
@@ -326,6 +326,7 @@ type
     bPlayPos: TBitBtn;
     bStep: TBitBtn;
     panVert1: TPanel;
+    N14: TMenuItem;
     procedure BtOpenClick(Sender: TObject);
     procedure FormCreate(Sender: TObject);
     procedure TrkChChange(Sender: TObject);
@@ -511,6 +512,7 @@ type
     procedure bStepClick(Sender: TObject);
     procedure panVisualResize(Sender: TObject);
     procedure StatusBarResize(Sender: TObject);
+    procedure MRecentClick(Sender: TObject);
   private
     { Private declarations }
     procedure OnEventChange(var Msg: TMessage); message WM_EVENTIDX;
@@ -521,6 +523,8 @@ type
     procedure OnDropFiles(var Msg: TWMDropFiles); message WM_DROPFILES;
   public
     { Public declarations }
+    procedure LoadConfig;
+    procedure SaveConfig;
     function LoadFile(FileName, Fmt: String): Boolean;
     function SaveFile(FileName: String): Boolean;
     function DetectFile(var F: TMemoryStream): String;
@@ -591,11 +595,14 @@ type
     function TimeBetween(Trk, Idx1, Idx2: Integer): UInt64;
     procedure CopyEvent(SrcTrk, SrcIdx, DestTrk, DestIdx: Integer);
     procedure CopyBufRange(Trk, From, Count: Integer);
+    procedure AddRecent(FileName: String);
+    procedure RefreshRecent;
   end;
 
 var
   MainForm: TMainForm;
   WidTable: Array[0..4] of Integer = (40, 56, 24, 172, 320);
+  RecentFiles: TStringList;
   Opened: Boolean = False;
   Container, EventFormat, EventProfile, EventViewProfile: AnsiString;
   // Container (smf, rmi, xmi, cmf, mus, ims, raw, syx, mids)
@@ -11165,10 +11172,13 @@ begin
       Opened := ReadSYX(M);
     end;
     if not Opened then
-      SongData.Strings.Clear;
+      SongData.Strings.Clear
+    else
+      AddRecent(FileName);
   end else
     Log.Lines.Add('[-] Unknown file format.');
   M.Free;
+  RefreshRecent;
   Result := Opened;
 end;
 
@@ -11317,7 +11327,10 @@ begin
   end;
   try
     if Result then
+    begin
       M.SaveToFile(FileName);
+      AddRecent(FileName);
+    end;
   except
     Result := False;
   end;
@@ -11326,6 +11339,7 @@ begin
   else
     Log.Lines.Add('[-] Save failed.');
   M.Free;
+  RefreshRecent;
   RefTrackList;
   TrkCh.ItemIndex := Idx;
   if (TrkCh.Items.Count > 0) and (TrkCh.ItemIndex = -1) then
@@ -11438,6 +11452,99 @@ begin
   ChkButtons;
 end;
 
+procedure TMainForm.MRecentClick(Sender: TObject);
+var
+  I: Integer;
+  M: TMenuItem;
+begin
+  M := Sender as TMenuItem;
+  if Pos('MRecent', M.Name) <> 1 then
+    Exit;
+  I := StrToInt(Copy(M.Name, 8, 1));
+  if I >= RecentFiles.Count then
+    Exit;
+  Log.Clear;
+  LoadFile(RecentFiles[I], '');
+  if TrkCh.Items.Count > 0 then begin
+    TrkCh.ItemIndex := 0;
+    FillEvents(TrkCh.ItemIndex);
+  end;
+  ChkButtons;
+end;
+
+procedure TMainForm.AddRecent(FileName: String);
+var
+  I: Integer;
+begin
+  I := 0;
+  while I < RecentFiles.Count do
+    if RecentFiles[I] = FileName then
+      RecentFiles.Delete(I)
+    else
+      Inc(I);
+  RecentFiles.Insert(0, FileName);
+  while RecentFiles.Count > 10 do
+    RecentFiles.Delete(10);
+end;
+
+procedure TMainForm.RefreshRecent;
+var
+  I: Integer;
+  M: TMenuItem;
+begin
+  // Clear recent menu items
+  for I := 0 to 10 - 1 do
+  begin
+    M := MFile.FindComponent('MRecent' + IntToStr(I)) as TMenuItem;
+    if M = nil then
+      Break;
+    M.Free;
+  end;
+  if RecentFiles.Count = 0 then
+  begin
+    M := TMenuItem.Create(MFile);
+    M.Name := 'MRecent0';
+    M.Caption := 'No recent files';
+    M.Enabled := False;
+    MFile.Insert(MFile.IndexOf(N14), M);
+    Exit;
+  end;
+  for I := 0 to RecentFiles.Count - 1 do
+  begin
+    M := TMenuItem.Create(MFile);
+    M.Name := 'MRecent' + IntToStr(I);
+    M.Caption := '&' + IntToStr(I) + ' ' + RecentFiles[I];
+    M.OnClick := MRecentClick;
+    MFile.Insert(MFile.IndexOf(N14), M);
+  end;
+end;
+
+procedure TMainForm.LoadConfig;
+var
+  INI: TIniFile;
+  I: Integer;
+begin
+  INI := TIniFile.Create(ChangeFileExt(Application.ExeName, '.ini'));
+  I := 0;
+  while INI.ValueExists('Recent', 'File' + IntToStr(I)) and (I < 10) do
+  begin
+    RecentFiles.Add(INI.ReadString('Recent', 'File' + IntToStr(I), ''));
+    Inc(I);
+  end;
+  INI.Free;
+end;
+
+procedure TMainForm.SaveConfig;
+var
+  INI: TIniFile;
+  I: Integer;
+begin
+  INI := TIniFile.Create(ChangeFileExt(Application.ExeName, '.ini'));
+  for I := 0 to RecentFiles.Count - 1 do
+    INI.WriteString('Recent', 'File' + IntToStr(I), RecentFiles[I]);
+  INI.Free;
+end;
+
 procedure TMainForm.FormCreate(Sender: TObject);
 var
   Filter: TStringList;
@@ -11489,6 +11596,10 @@ begin
   end;
   MW32RefreshClick(Sender);
   ChkButtons;
+
+  RecentFiles := TStringList.Create;
+  LoadConfig;
+  RefreshRecent;
 
   if ParamCount() > 0
   then begin
@@ -11547,6 +11658,8 @@ end;
 
 procedure TMainForm.FormDestroy(Sender: TObject);
 begin
+  SaveConfig;
+  RecentFiles.Free;
   SongData.Free;
 end;
 

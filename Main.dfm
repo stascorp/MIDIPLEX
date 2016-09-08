@@ -700,6 +700,9 @@ object MainForm: TMainForm
       object N1: TMenuItem
         Caption = '-'
       end
+      object N14: TMenuItem
+        Caption = '-'
+      end
       object MExit: TMenuItem
         Caption = '&Exit'
         OnClick = MExitClick
