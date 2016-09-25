@@ -10245,12 +10245,13 @@ var
           J := 0;
           while J < Length(Notes[I]) do
           begin
-            if Notes[I][J].Tick = 0 then
-              Continue;
-            if Notes[I][J].Tick > TickCounter then
-              Break;
-            dwMsg := $90 or I or (Notes[I][J].Note shl 8);
-            midiOutShortMsg(MIDIOut, dwMsg);
+            if Notes[I][J].Tick > 0 then
+            begin
+              if Notes[I][J].Tick > TickCounter then
+                Break;
+              dwMsg := $90 or I or (Notes[I][J].Note shl 8);
+              midiOutShortMsg(MIDIOut, dwMsg);
+            end;
             Inc(J);
           end;
           if J > 0 then
