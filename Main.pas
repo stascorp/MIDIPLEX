@@ -13,13 +13,16 @@ const
   WM_TRACKIDX = WM_USER + 111;
   WM_SETVU = WM_USER + 112;
   WM_PLAYCTRL = WM_USER + 113;
+  WM_EVENTREF = WM_USER + 114;
   WM_EVENTREQ = WM_USER + 120;
 
   PLAY_DEF  = 0;
   PLAY_POS  = 1;
   PLAY_STEP = 2;
+  PLAY_REC  = 3;
   PLAYER_PLAY = 1;
   PLAYER_STOP = 2;
+  PLAYER_REC  = 3;
 
 type
   FILE_VERSION = record
@@ -306,7 +309,7 @@ type
     panVisual: TPanel;
     imgVU: TImage;
     N12: TMenuItem;
-    MOutConf: TMenuItem;
+    MIOConf: TMenuItem;
     MLoopSong: TMenuItem;
     VisualTimer: TTimer;
     panToolbar: TPanel;
@@ -327,6 +330,12 @@ type
     bStep: TBitBtn;
     panVert1: TPanel;
     N14: TMenuItem;
+    MMIDIIn: TMenuItem;
+    MInWin32: TMenuItem;
+    MIW32Refresh: TMenuItem;
+    N15: TMenuItem;
+    panVert2: TPanel;
+    bRecord: TBitBtn;
     procedure BtOpenClick(Sender: TObject);
     procedure FormCreate(Sender: TObject);
     procedure TrkChChange(Sender: TObject);
@@ -507,19 +516,23 @@ type
     procedure MProfileXMIClick(Sender: TObject);
     procedure MW32RefreshClick(Sender: TObject);
     procedure MW32MapperClick(Sender: TObject);
-    procedure MOutConfClick(Sender: TObject);
+    procedure MIOConfClick(Sender: TObject);
     procedure bPlayPosClick(Sender: TObject);
     procedure bStepClick(Sender: TObject);
     procedure panVisualResize(Sender: TObject);
     procedure StatusBarResize(Sender: TObject);
     procedure MRecentClick(Sender: TObject);
     procedure EventsTopLeftChanged(Sender: TObject);
+    procedure MIW32RefreshClick(Sender: TObject);
+    procedure MIW32SelectClick(Sender: TObject);
+    procedure bRecordClick(Sender: TObject);
   private
     { Private declarations }
     procedure OnEventChange(var Msg: TMessage); message WM_EVENTIDX;
     procedure OnTrackChange(var Msg: TMessage); message WM_TRACKIDX;
     procedure OnVUChange(var Msg: TMessage); message WM_SETVU;
     procedure OnPlayerChange(var Msg: TMessage); message WM_PLAYCTRL;
+    procedure OnPlayerRefresh(var Msg: TMessage); message WM_EVENTREF;
     procedure OnEventRequest(var Msg: TMessage); message WM_EVENTREQ;
     procedure OnDropFiles(var Msg: TWMDropFiles); message WM_DROPFILES;
   public
@@ -627,6 +640,16 @@ var
   PlayerMode: Byte;
   LoopEnabled: Boolean = False;
   gStepEvent: TStepEvent;
+  // Recorder
+  MIDIIDev: DWORD = MIDI_MAPPER;
+  MIDIIn: HMIDIIN;
+  MidInTrk: Integer;
+  MidInEcho: Boolean = True;
+  UpdTicks: Cardinal = 0;
+  MinUpdDelay: Cardinal = 100;
+  RecDelayCoef: Double;
+  RecCountStart: Int64;
+  RecLastTick: UInt64;
   // Visual
   vFS: TFormatSettings;
   vChangeEvent: Boolean = False;
@@ -9171,10 +9194,11 @@ begin
   MEdit.Enabled := Opened;
   MSave.Enabled := Opened;
   MSaveAs.Enabled := Opened;
-  bPlay.Enabled := Opened and (MIDIThrId = 0);
-  bPlayPos.Enabled := Opened and (MIDIThrId = 0);
-  bStop.Enabled := Opened and (MIDIThrId > 0);
-  bStep.Enabled := Opened and ((MIDIThrId = 0) or (PlayerMode = PLAY_STEP));
+  bPlay.Enabled := Opened and (MIDIThrId = 0) and (PlayerMode <> PLAY_REC);
+  bPlayPos.Enabled := Opened and (MIDIThrId = 0) and (PlayerMode <> PLAY_REC);
+  bStop.Enabled := Opened and ((MIDIThrId > 0) or (PlayerMode = PLAY_REC));
+  bStep.Enabled := Opened and ((MIDIThrId = 0) or (PlayerMode = PLAY_STEP)) and (PlayerMode <> PLAY_REC);
+  bRecord.Enabled := Opened and (MIDIThrId = 0) and (PlayerMode <> PLAY_REC);
   MDelTrack.Enabled := Length(TrackData) > 0;
   BDelTrack.Enabled := Length(TrackData) > 0;
   Label1.Enabled := Length(TrackData) > 0;
@@ -10120,6 +10144,7 @@ begin
       bPlayPos.Enabled := False;
       bStop.Enabled := True;
       bStep.Enabled := PlayerMode = PLAY_STEP;
+      bRecord.Enabled := False;
     end;
     PLAYER_STOP:
     begin
@@ -10127,8 +10152,29 @@ begin
       bPlayPos.Enabled := True;
       bStop.Enabled := False;
       bStep.Enabled := True;
+      bRecord.Enabled := True;
+    end;
+    PLAYER_REC:
+    begin
+      bPlay.Enabled := False;
+      bPlayPos.Enabled := False;
+      bStop.Enabled := True;
+      bStep.Enabled := False;
+      bRecord.Enabled := False;
     end;
   end;
+end;
+
+procedure TMainForm.OnPlayerRefresh(var Msg: TMessage);
+begin
+  if Msg.WParam <> TrkCh.ItemIndex then
+    Exit;
+  if Length(TrackData[TrkCh.ItemIndex].Data) > 0 then
+    Events.RowCount := Length(TrackData[TrkCh.ItemIndex].Data) + 1;
+  Events.Row := Events.RowCount - 1;
+  FillEvents(TrkCh.ItemIndex);
+  CalculateEvnts;
+  ChkButtons;
 end;
 
 procedure TMainForm.OnEventRequest(var Msg: TMessage);
@@ -10611,7 +10657,7 @@ begin
   if Length(TrackData) = 0 then
     goto stop;
 
-  if PlaySet.Mode <> PLAY_STEP then
+  if PlaySet.Mode < PLAY_STEP then
   begin
     SetLength(Data, Length(TrackData));
     SetLength(DPos, Length(Data));
@@ -10821,7 +10867,7 @@ play:
     until lpPerfomanceCount - lpPerfomanceCountStart >= lpFrequency * SecDelay * TickCounter;
   end;
 loop:
-  if (MIDIThrId > 0) and (PlaySet.Mode <> PLAY_STEP) and LoopEnabled then
+  if (MIDIThrId > 0) and (PlaySet.Mode < PLAY_STEP) and LoopEnabled then
   begin
     LoopReq := False;
     I := 0;
@@ -10865,6 +10911,73 @@ stop:
   midiOutClose(MIDIOut);
   MIDIThrId := 0;
   PostMessage(MainForm.Handle, WM_PLAYCTRL, PLAYER_STOP, 0);
+end;
+
+procedure midiInCallback(Handle: HMIDIIn; uMsg: uint; dwInstance, dwParam1, dwParam2: dword); stdcall;
+var
+  Pos, Tick: UInt64;
+  RecCount: Int64;
+  hdr: PMIDIHDR;
+  Wnd: HWND;
+begin
+  Wnd := MainForm.Handle;
+  Pos := Length(TrackData[MidInTrk].Data);
+  QueryPerformanceCounter(RecCount);
+  if RecDelayCoef > 0 then
+    Tick := Round((RecCount - RecCountStart) / RecDelayCoef)
+  else
+    Tick := 0;
+  case uMsg of
+    MIM_OPEN: ;
+    MIM_CLOSE: ;
+    MIM_DATA:
+    begin
+      with TrackData[MidInTrk] do
+      begin
+        SetLength(Data, Pos + 1);
+        Data[Pos].Ticks := Tick - RecLastTick;
+        RecLastTick := Tick;
+        Data[Pos].Status := dwParam1 and $FF;
+        Data[Pos].BParm1 := dwParam1 shr 8 and $FF;
+        Data[Pos].BParm2 := dwParam1 shr 16 and $FF;
+        if Data[Pos].Status shr 4 = 9 then
+          PostMessage(Wnd, WM_SETVU, Data[Pos].Status and $F, Data[Pos].BParm2);
+      end;
+      if MidInEcho then
+        midiOutShortMsg(MIDIOut, dwParam1);
+      if GetTickCount() - UpdTicks >= MinUpdDelay then
+      begin
+        UpdTicks := GetTickCount();
+        PostMessage(Wnd, WM_EVENTREF, MidInTrk, 0);
+      end;
+    end;
+    MIM_LONGDATA:
+    begin
+      hdr := PMIDIHDR(dwParam1);
+      with TrackData[MidInTrk] do
+      begin // SysEx
+        SetLength(Data, Pos + 1);
+        Data[Pos].Ticks := Tick - RecLastTick;
+        RecLastTick := Tick;
+        Data[Pos].Status := $F0;
+        Data[Pos].Len := hdr^.dwBytesRecorded;
+        SetLength(Data[Pos].DataArray, Data[Pos].Len);
+        Move(hdr^.lpData^, Data[Pos].DataArray[0], Data[Pos].Len);
+      end;
+      if MidInEcho then
+      begin
+
+      end;
+      if GetTickCount() - UpdTicks >= MinUpdDelay then
+      begin
+        UpdTicks := GetTickCount();
+        PostMessage(Wnd, WM_EVENTREF, MidInTrk, 0);
+      end;
+    end;
+    MIM_ERROR: ;
+    MIM_LONGERROR: ;
+    MIM_MOREDATA: ;
+  end;
 end;
 
 procedure TMainForm.MMSysError(Err: DWord);
@@ -11035,9 +11148,120 @@ begin
   ResumeThread(MIDIThr);
 end;
 
+function GetTempo(Trk, Idx: Integer): Cardinal;
+var
+  I: Integer;
+begin
+  Result := 500000;
+  if (Trk < 0) or (Trk >= Length(TrackData)) then
+    Exit;
+  if (Idx < 0) or (Idx >= Length(TrackData[Trk].Data)) then
+    Exit;
+  for I := Idx downto 0 do
+    if (TrackData[Trk].Data[I].Status = $FF)
+    and (TrackData[Trk].Data[I].BParm1 = $51) then
+    begin
+      Result := TrackData[Trk].Data[I].Value;
+      Break;
+    end;
+end;
+
+procedure TMainForm.bRecordClick(Sender: TObject);
+var
+  Err: DWORD;
+  NewMIDIOut, NewMIDIIn: THandle;
+  Division: Word;
+  Tempo: Cardinal;
+  RecFrequency: Int64;
+begin
+  if Length(TrackData) = 0 then
+    Exit;
+
+  Err := midiOutOpen(@NewMIDIOut, MIDIDev, 0, 0, CALLBACK_NULL);
+  if Err <> MMSYSERR_NOERROR then
+  begin
+    MMSysError(Err);
+    Exit;
+  end;
+  MIDIOut := NewMIDIOut;
+
+  Err := midiInOpen(@NewMIDIIn, MIDIIDev, Cardinal(@midiInCallback), 0, CALLBACK_FUNCTION);
+  if Err <> MMSYSERR_NOERROR then
+  begin
+    MMSysError(Err);
+    midiOutClose(MIDIOut);
+    Exit;
+  end;
+  MIDIIn := NewMIDIIn;
+  MidInTrk := TrkCh.ItemIndex;
+  if not QueryPerformanceFrequency(RecFrequency) then
+  begin
+    MessageBox(Handle, 'QueryPerformanceFrequency failed.', 'Error', MB_ICONERROR or MB_OK);
+    midiInClose(MIDIIn);
+    midiOutClose(MIDIOut);
+    Exit;
+  end;
+  if not QueryPerformanceCounter(RecCountStart) then
+  begin
+    MessageBox(Handle, 'QueryPerformanceCounter failed.', 'Error', MB_ICONERROR or MB_OK);
+    midiInClose(MIDIIn);
+    midiOutClose(MIDIOut);
+    Exit;
+  end;
+  if not SongData_GetWord('Division', Division) then
+  begin
+    MessageBox(Handle, 'Division is not defined.', 'Error', MB_ICONERROR or MB_OK);
+    midiInClose(MIDIIn);
+    midiOutClose(MIDIOut);
+    Exit;
+  end;
+  Tempo := GetTempo(MidInTrk, Length(TrackData[MidInTrk].Data) - 1);
+  RecDelayCoef := RecFrequency * (Tempo / Division / 1000000);
+  RecLastTick := 0;
+
+  if Length(TrackData[MidInTrk].Data) > 0 then
+    with TrackData[MidInTrk] do
+    begin
+      if (Data[High(Data)].Status = $FF)
+      and (Data[High(Data)].BParm1 = $2F) then
+        // delete End of Track
+        SetLength(Data, Length(Data) - 1);
+
+      SetLength(Data, Length(Data) + 1);
+      Data[High(Data)].Status := $FF;
+      Data[High(Data)].BParm1 := $06; // Marker
+      Data[High(Data)].DataString := 'Record take';
+      Data[High(Data)].Len := Length(Data[High(Data)].DataString);
+    end;
+  UpdTicks := 0;
+  PostMessage(Handle, WM_EVENTREF, MidInTrk, 0);
+
+  PlayerMode := PLAY_REC;
+  SendMessage(Handle, WM_PLAYCTRL, PLAYER_REC, 0);
+  midiInStart(MIDIIn);
+end;
+
 procedure TMainForm.bStopClick(Sender: TObject);
 begin
   MIDIThrId := 0;
+  if PlayerMode = PLAY_REC then
+  begin
+    midiInStop(MIDIIn);
+    midiInClose(MIDIIn);
+    midiOutClose(MIDIOut);
+
+    with TrackData[MidInTrk] do
+    begin
+      SetLength(Data, Length(Data) + 1);
+      Data[High(Data)].Status := $FF;
+      Data[High(Data)].BParm1 := $2F;
+      Data[High(Data)].Len := 0;
+    end;
+    PostMessage(Handle, WM_EVENTREF, MidInTrk, 0);
+
+    PlayerMode := PLAY_DEF;
+    SendMessage(Handle, WM_PLAYCTRL, PLAYER_STOP, 0);
+  end;
 end;
 
 function TMainForm.LoadFile(FileName, Fmt: String): Boolean;
@@ -11641,6 +11865,7 @@ begin
     Width := StatusBar.ClientWidth - Left - 17;
   end;
   MW32RefreshClick(Sender);
+  MIW32RefreshClick(Sender);
   ChkButtons;
 
   RecentFiles := TStringList.Create;
@@ -13823,7 +14048,55 @@ begin
   MWin32.Checked := True;
 end;
 
-procedure TMainForm.MOutConfClick(Sender: TObject);
+procedure TMainForm.MIW32RefreshClick(Sender: TObject);
+var
+  C: Cardinal;
+  I: Integer;
+  lpCaps: TMidiInCaps;
+  M: TMenuItem;
+begin
+  C := 0;
+  while MInWin32.Count > 2 do
+  begin
+    M := MInWin32.FindComponent('MInW32_' + IntToStr(C)) as TMenuItem;
+    M.Free;
+    Inc(C);
+  end;
+  C := midiInGetNumDevs();
+  for I := 0 to C - 1 do
+    if midiInGetDevCaps(Cardinal(I), @lpCaps, SizeOf(lpCaps)) = MMSYSERR_NOERROR then
+    begin
+      if MIDIIDev = MIDI_MAPPER then
+      begin
+        MIDIIDev := I;
+        MInWin32.Checked := True;
+      end;
+      M := TMenuItem.Create(MInWin32);
+      M.Name := 'MInW32_' + IntToStr(I);
+      M.RadioItem := True;
+      M.Checked := Integer(MIDIIDev) = I;
+      M.Caption := lpCaps.szPname;
+      M.OnClick := MIW32SelectClick;
+      MInWin32.Add(M);
+    end;
+end;
+
+procedure TMainForm.MIW32SelectClick(Sender: TObject);
+var
+  M, IM: TMenuItem;
+  I: Integer;
+begin
+  M := Sender as TMenuItem;
+  I := StrToInt(Copy(M.Name, 8, Length(M.Name) - 7));
+  IM := MWin32.FindComponent('MIW32_' + IntToStr(MIDIIDev)) as TMenuItem;
+  if IM <> nil then
+    IM.Checked := False;
+  MIDIIDev := DWORD(I);
+  M.Checked := True;
+  MInWin32.Checked := True;
+end;
+
+procedure TMainForm.MIOConfClick(Sender: TObject);
 begin
   MessageBox(Handle, 'This feature is not implemented yet.', 'Notice', mb_Ok or mb_IconWarning);
 end;
