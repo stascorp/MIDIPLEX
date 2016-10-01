@@ -513,6 +513,7 @@ type
     procedure panVisualResize(Sender: TObject);
     procedure StatusBarResize(Sender: TObject);
     procedure MRecentClick(Sender: TObject);
+    procedure EventsTopLeftChanged(Sender: TObject);
   private
     { Private declarations }
     procedure OnEventChange(var Msg: TMessage); message WM_EVENTIDX;
@@ -602,6 +603,7 @@ type
 var
   MainForm: TMainForm;
   WidTable: Array[0..4] of Integer = (40, 56, 24, 172, 320);
+  VisRows: Integer = 0;
   RecentFiles: TStringList;
   Opened: Boolean = False;
   Container, EventFormat, EventProfile, EventViewProfile: AnsiString;
@@ -11667,6 +11669,12 @@ end;
 procedure TMainForm.FormResize(Sender: TObject);
 begin
   panToolbar.Width := panMiddle.Width;
+  if Events.VisibleRowCount <> VisRows then
+  begin
+    if VisRows < Events.VisibleRowCount then
+      FillEvents(TrkCh.ItemIndex);
+    VisRows := Events.VisibleRowCount;
+  end;
 end;
 
 procedure TMainForm.StatusBarResize(Sender: TObject);
@@ -12065,7 +12073,7 @@ end;
 
 procedure TMainForm.FillEvents(Idx: Integer);
 var
-  I,J: Integer;
+  I, J, Cnt: Integer;
   S: String;
   Speed: Double;
   Fl: Single;
@@ -12112,7 +12120,47 @@ begin
     if SongData_GetInt('MUS_Percussive', I) then
       Rhythm := I > 0;
 
-  for I := 0 to Length(TrackData[Idx].Data) - 1 do begin
+  // Pre-process events to get current state
+  for I := 0 to Length(TrackData[Idx].Data) - 1 do
+  begin
+    if I = Events.TopRow - 1 then
+      Break;
+    if EventViewProfile = 'mdi'
+    then begin
+      if (TrackData[Idx].Data[I].Status = $F0)
+      or (
+        (TrackData[Idx].Data[I].Status = $FF) and
+        (TrackData[Idx].Data[I].BParm1 = $7F)
+      )
+      then
+        if (TrackData[Idx].Data[I].Len = 6)
+        and (TrackData[Idx].Data[I].DataArray[0] = $00)
+        and (TrackData[Idx].Data[I].DataArray[1] = $00)
+        and (TrackData[Idx].Data[I].DataArray[2] = $3F)
+        and (TrackData[Idx].Data[I].DataArray[3] = $00)
+        and (TrackData[Idx].Data[I].DataArray[4] = $02)
+        then begin
+          if TrackData[Idx].Data[I].DataArray[5] = 0 then
+            Rhythm := False;
+          if TrackData[Idx].Data[I].DataArray[5] = 1 then
+            Rhythm := True;
+        end;
+    end;
+
+    if EventViewProfile = 'cmf'
+    then begin
+      if (TrackData[Idx].Data[I].Status shr 4 = $B)
+      and (TrackData[Idx].Data[I].BParm1 = 103) then
+        Rhythm := TrackData[Idx].Data[I].BParm2 > 0;
+    end;
+
+  end;
+  // Fill displayed events
+  Cnt := 0;
+  for I := Events.TopRow - 1 to Length(TrackData[Idx].Data) - 1 do
+  begin
+    if Cnt > Events.VisibleRowCount then
+      Break;
     Events.Cells[0,I+1] := IntToStr(I+1);
     Events.Cells[1,I+1] := IntToStr(TrackData[Idx].Data[I].Ticks);
     Events.Cells[2,I+1] := '';
@@ -12684,8 +12732,13 @@ begin
         end;
       end;
     end;
-
+    Inc(Cnt);
   end; // track read
+end;
+
+procedure TMainForm.EventsTopLeftChanged(Sender: TObject);
+begin
+  FillEvents(TrkCh.ItemIndex);
 end;
 
 procedure TMainForm.MNewClick(Sender: TObject);

@@ -5,6 +5,7 @@ object MainForm: TMainForm
   ClientHeight = 522
   ClientWidth = 742
   Color = clBtnFace
+  DoubleBuffered = True
   Font.Charset = DEFAULT_CHARSET
   Font.Color = clWindowText
   Font.Height = -11
@@ -312,17 +313,20 @@ object MainForm: TMainForm
     ColCount = 1
     DefaultColWidth = 40
     DefaultRowHeight = 16
+    DoubleBuffered = True
     Enabled = False
     FixedCols = 0
     RowCount = 1
     FixedRows = 0
     Options = [goFixedVertLine, goFixedHorzLine, goVertLine, goHorzLine, goRangeSelect, goColSizing]
+    ParentDoubleBuffered = False
     PopupMenu = PopEdit
     TabOrder = 2
     OnClick = EventsClick
     OnDblClick = BEditEvntClick
     OnKeyPress = EventsKeyPress
     OnMouseUp = EventsMouseUp
+    OnTopLeftChanged = EventsTopLeftChanged
   end
   object panLeft: TPanel
     Left = 0
