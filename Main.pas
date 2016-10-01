@@ -598,6 +598,7 @@ type
     procedure CopyBufRange(Trk, From, Count: Integer);
     procedure AddRecent(FileName: String);
     procedure RefreshRecent;
+    procedure MMSysError(Err: DWord);
   end;
 
 var
@@ -10234,6 +10235,8 @@ var
     if Result then
       if midiOutLongMsg(MIDIOut, @MIDIData, SizeOf(MIDIData)) <> MMSYSERR_NOERROR then
         Result := False;
+    if Result then
+      midiOutUnprepareHeader(MIDIOut, @MIDIData, SizeOf(MIDIData));
   end;
   procedure PerTickProcess();
   var
@@ -10864,6 +10867,37 @@ stop:
   PostMessage(MainForm.Handle, WM_PLAYCTRL, PLAYER_STOP, 0);
 end;
 
+procedure TMainForm.MMSysError(Err: DWord);
+var
+  Str: String;
+begin
+  Str := 'Unknown error.';
+  case Err of
+    MMSYSERR_NOERROR:      Str := 'No error.';
+    MMSYSERR_ERROR:        Str := 'Unspecified error.';
+    MMSYSERR_BADDEVICEID:  Str := 'Device ID out of range.';
+    MMSYSERR_NOTENABLED:   Str := 'Driver is not enabled.';
+    MMSYSERR_ALLOCATED:    Str := 'Device is already allocated.';
+    MMSYSERR_INVALHANDLE:  Str := 'Invalid device handle.';
+    MMSYSERR_NODRIVER:     Str := 'Device driver not found.';
+    MMSYSERR_NOMEM:        Str := 'Out of memory.';
+    MMSYSERR_NOTSUPPORTED: Str := 'Unsupported function.';
+    MMSYSERR_BADERRNUM:    Str := 'Error value out of range.';
+    MMSYSERR_INVALFLAG:    Str := 'Invalid flag passed.';
+    MMSYSERR_INVALPARAM:   Str := 'Invalid parameter passed.';
+    MMSYSERR_HANDLEBUSY:   Str := 'Handle is already in use.';
+    MMSYSERR_INVALIDALIAS: Str := 'Specified alias not found.';
+    MMSYSERR_BADDB:        Str := 'Bad registry database.';
+    MMSYSERR_KEYNOTFOUND:  Str := 'Registry key not found.';
+    MMSYSERR_READERROR:    Str := 'Registry read error.';
+    MMSYSERR_WRITEERROR:   Str := 'Registry write error.';
+    MMSYSERR_DELETEERROR:  Str := 'Registry delete error.';
+    MMSYSERR_VALNOTFOUND:  Str := 'Registry value not found.';
+    MMSYSERR_NODRIVERCB:   Str := 'Driver doesn''t use callback.';
+  end;
+  MessageBox(Handle, PWideChar(Str), 'Multimedia System Error', MB_ICONERROR or MB_OK);
+end;
+
 procedure TMainForm.bPlayClick(Sender: TObject);
 var
   Err: DWORD;
@@ -10892,7 +10926,10 @@ begin
 
   Err := midiOutOpen(@NewMIDIOut, MIDIDev, 0, 0, CALLBACK_NULL);
   if Err <> MMSYSERR_NOERROR then
+  begin
+    MMSysError(Err);
     Exit;
+  end;
   MIDIOut := NewMIDIOut;
 
   PlayerMode := PLAY_DEF;
@@ -10936,7 +10973,10 @@ begin
 
   Err := midiOutOpen(@NewMIDIOut, MIDIDev, 0, 0, CALLBACK_NULL);
   if Err <> MMSYSERR_NOERROR then
+  begin
+    MMSysError(Err);
     Exit;
+  end;
   MIDIOut := NewMIDIOut;
 
   PlayerMode := PLAY_POS;
@@ -10979,7 +11019,10 @@ begin
 
   Err := midiOutOpen(@NewMIDIOut, MIDIDev, 0, 0, CALLBACK_NULL);
   if Err <> MMSYSERR_NOERROR then
+  begin
+    MMSysError(Err);
     Exit;
+  end;
   MIDIOut := NewMIDIOut;
 
   PlayerMode := PLAY_STEP;
