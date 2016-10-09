@@ -712,8 +712,8 @@ object MainForm: TMainForm
       'orc|MIDI Stream (*.mds;*.mids)|*.mds;*.mids|Miles Extended MIDI ' +
       '(*.xmi)|*.xmi|Creative Music File (*.cmf)|*.cmf|AdLib ROL (*.rol' +
       ')|*.rol|AdLib MUS (*.mus)|*.mus|AdLib IMS (*.ims)|*.ims|AdLib MD' +
-      'I (*.mdi)|*.mdi|Raw MIDI data (Standard)|*.raw|System Exclusive ' +
-      'data|*.syx'
+      'I (*.mdi)|*.mdi|Cryo HERAD (*.sdb;*.agd;*.m32)|*.sdb;*.agd;*.m32' +
+      '|Raw MIDI data (Standard)|*.raw|System Exclusive data|*.syx'
     Title = 'Open MIDI File'
     Left = 256
     Top = 40
@@ -938,6 +938,10 @@ object MainForm: TMainForm
           Caption = 'Creative Music File'
           OnClick = MFormatCMFClick
         end
+        object MFormatHERAD: TMenuItem
+          Caption = 'HERAD System'
+          OnClick = MFormatHERADClick
+        end
       end
       object N9: TMenuItem
         Caption = '-'
@@ -992,6 +996,10 @@ object MainForm: TMainForm
         object MProfileCMF: TMenuItem
           Caption = 'Creative Music File'
           OnClick = MProfileCMFClick
+        end
+        object MProfileHERAD: TMenuItem
+          Caption = 'HERAD System'
+          OnClick = MProfileHERADClick
         end
       end
       object N12: TMenuItem
@@ -1643,7 +1651,8 @@ object MainForm: TMainForm
       '(*.rmi;*.rmid)|*.rmi;*.rmid|Miles Extended MIDI (*.xmi)|*.xmi|Cr' +
       'eative Music File (*.cmf)|*.cmf|AdLib ROL (*.rol)|*.rol|AdLib MU' +
       'S (*.mus)|*.mus|AdLib IMS (*.ims)|*.ims|AdLib MDI (*.mdi)|*.mdi|' +
-      'Raw MIDI data (Standard)|*.raw|System Exclusive data|*.syx'
+      'Cryo HERAD (*.sdb;*.agd;*.m32)|*.sdb;*.agd;*.m32|Raw MIDI data (' +
+      'Standard)|*.raw|System Exclusive data|*.syx'
     Options = [ofOverwritePrompt, ofHideReadOnly, ofEnableSizing]
     Title = 'Save MIDI File'
     Left = 384

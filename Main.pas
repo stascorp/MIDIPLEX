@@ -336,6 +336,8 @@ type
     N15: TMenuItem;
     panVert2: TPanel;
     bRecord: TBitBtn;
+    MFormatHERAD: TMenuItem;
+    MProfileHERAD: TMenuItem;
     procedure BtOpenClick(Sender: TObject);
     procedure FormCreate(Sender: TObject);
     procedure TrkChChange(Sender: TObject);
@@ -526,6 +528,8 @@ type
     procedure MIW32RefreshClick(Sender: TObject);
     procedure MIW32SelectClick(Sender: TObject);
     procedure bRecordClick(Sender: TObject);
+    procedure MFormatHERADClick(Sender: TObject);
+    procedure MProfileHERADClick(Sender: TObject);
   private
     { Private declarations }
     procedure OnEventChange(var Msg: TMessage); message WM_EVENTIDX;
@@ -556,12 +560,14 @@ type
     function ReadCMF(var F: TMemoryStream): Boolean;
     function ReadROL(var F: TMemoryStream; FileName: String): Boolean;
     function ReadMUS(var F: TMemoryStream; FileName: String): Boolean;
+    function ReadHERAD(var F: TMemoryStream): Boolean;
     function ReadRaw(var F: TMemoryStream): Boolean;
     function ReadSYX(var F: TMemoryStream): Boolean;
     procedure ReadTrackData(var F: TMemoryStream; var Trk: Chunk);
     procedure ReadTrackData_MIDS(var F: TMemoryStream; var Trk: Chunk);
     procedure ReadTrackData_XMI(var F: TMemoryStream; var Trk: Chunk);
     procedure ReadTrackData_MUS(var F: TMemoryStream; var Trk: Chunk);
+    procedure ReadTrackData_HERAD(var F: TMemoryStream; var Trk: Chunk);
     procedure ReadTrackData_SYX(var F: TMemoryStream; var Trk: Chunk);
     procedure WriteMIDI(var F: TMemoryStream);
     procedure WriteRMI(var F: TMemoryStream);
@@ -569,13 +575,16 @@ type
     procedure WriteCMF(var F: TMemoryStream);
     procedure WriteROL(var F: TMemoryStream; FileName: String);
     procedure WriteMUS(var F: TMemoryStream; FileName: String);
+    procedure WriteHERAD(var F: TMemoryStream);
     procedure WriteRaw(var F: TMemoryStream);
     procedure WriteSYX(var F: TMemoryStream);
     procedure WriteTrackData(var F: TMemoryStream; var Trk: Chunk);
     procedure WriteTrackData_XMI(var F: TMemoryStream; var Trk: Chunk);
     procedure WriteTrackData_MUS(var F: TMemoryStream; var Trk: Chunk);
+    procedure WriteTrackData_HERAD(var F: TMemoryStream; var Trk: Chunk);
     procedure WriteTrackData_SYX(var F: TMemoryStream; var Trk: Chunk);
     procedure ConvertEvents(DestProfile: AnsiString);
+    procedure Convert_MID_FixTempo;
     procedure Convert_XMI_MID;
     procedure Convert_MID_XMI;
     procedure Convert_MUS_MID;
@@ -591,6 +600,7 @@ type
     procedure Convert_MDI_ROL;
     procedure Convert_IMS_MID;
     procedure Convert_IMS_ROL;
+    procedure Convert_HERAD_MID;
     procedure ConvertTicks(RelToAbs: Boolean; var Data: Array of Command);
     function MergeTracksUsingTicks(Tracks: Array of Integer; EOT: Boolean): Chunk;
     procedure MergeTracksByTicks;
@@ -2335,6 +2345,149 @@ begin
   CalculateEvnts;
 end;
 
+function TMainForm.ReadHERAD(var F: TMemoryStream): Boolean;
+const
+  szSDB = 50;
+  szAGD = 82;
+  InstLen = 40;
+var
+  W, InstOffset, Division: Word;
+  I, InstCnt: Integer;
+  InitTempo: Cardinal;
+  Speed: Single;
+  wOffsets, wSizes: Array[0..20] of Word;
+  Params: Array[0..31] of Byte;
+  checkOff, isAGD, isM32, isV2: Boolean;
+  HERADInst: Array[0..InstLen-1] of Byte;
+  MIDIData: TMemoryStream;
+begin
+  Result := False;
+  Log.Lines.Add('[*] Reading Cryo HERAD music file...');
+
+  if F.Size < 2 + szSDB then begin
+    Log.Lines.Add('[-] Error: Wrong file size.');
+    Exit;
+  end;
+
+  F.Seek(0, soFromBeginning);
+  F.ReadBuffer(InstOffset, 2); // Instruments offset
+  if (InstOffset = 0) or (F.Size < InstOffset) then begin
+    Log.Lines.Add('[-] Error: Incorrect offset / file size.');
+    Exit;
+  end;
+  InstCnt := (F.Size - InstOffset) div InstLen;
+  checkOff := False;
+  isAGD := False;
+  for I := 0 to Length(wOffsets) - 1 do
+  begin // Track offsets
+    F.ReadBuffer(wOffsets[I], 2);
+    if wOffsets[I] = 0 then
+      checkOff := True
+    else
+    begin
+      if checkOff then
+      begin
+        Log.Lines.Add('[-] Error: Unexpected track offset after last track.');
+        Exit;
+      end;
+      if (wOffsets[I] < szSDB)
+      or (isAGD and (wOffsets[I] < szAGD))
+      or (wOffsets[I] >= F.Size) then
+      begin
+        Log.Lines.Add('[-] Error: Wrong track offset.');
+        Exit;
+      end;
+    end;
+    if I = 0 then
+      case wOffsets[I] of
+        szSDB: ; // SDB, M32
+        szAGD:   // AGD
+          isAGD := True;
+        else begin
+          Log.Lines.Add('[-] Error: Wrong first track offset.');
+          Exit;
+        end;
+      end;
+  end;
+  for I := 0 to Length(wSizes) - 2 do
+    if wOffsets[I + 1] > 0 then
+      wSizes[I] := wOffsets[I + 1] - wOffsets[I]
+    else
+    begin
+      wSizes[I] := InstOffset - 2 - wOffsets[I];
+      Break;
+    end;
+  if isAGD and (F.Size < 2 + szAGD) then begin
+    Log.Lines.Add('[-] Error: Wrong file size.');
+    Exit;
+  end;
+  F.ReadBuffer(W, 2);
+  SongData_PutInt('HERAD_LoopStart', W);
+  F.ReadBuffer(W, 2);
+  SongData_PutInt('HERAD_LoopEnd', W);
+  F.ReadBuffer(W, 2);
+  SongData_PutInt('HERAD_LoopCount', W);
+  F.ReadBuffer(W, 2); // Speed int / frac
+  Speed := (W shr 8) + (W and $FF / 256);
+  SongData_PutFloat('HERAD_Speed', Speed);
+  Division := 24;
+  InitTempo := Round(Speed * MIDIStdTempo / 4);
+  SongData_PutDWord('InitTempo', InitTempo);
+  SongData_PutInt('SMPTE', 0);
+  SongData_PutInt('Division', Division);
+  if isAGD then
+  begin
+    F.ReadBuffer(Params, SizeOf(Params));
+    SongData_PutArray('HERAD_Params', Params);
+  end;
+
+  isM32 := InstCnt = 0;
+  isV2 := not isM32;
+  F.Seek(InstOffset, soFromBeginning);
+  for I := 0 to InstCnt - 1 do
+  begin
+    F.ReadBuffer(HERADInst, SizeOf(HERADInst));
+    if HERADInst[0] = 0 then
+      isV2 := False;
+    SongData_PutArray('HERAD_Inst#' + IntToStr(I), HERADInst);
+  end;
+  SongData_PutInt('HERAD_V2', Byte(isV2));
+
+  isM32 := InstCnt = 0;
+  if isM32 then
+    SongData_PutInt('MIDIType', 0)
+  else
+    SongData_PutInt('MIDIType', 1);
+
+  SetLength(TrackData, 0);
+  for I := 0 to Length(wOffsets) - 1 do
+  begin
+    if wOffsets[I] = 0 then
+      Break;
+    Log.Lines.Add('[*] Reading track at offset '+IntToStr(wOffsets[I])+'.');
+    SetLength(TrackData, I + 1);
+    TrackData[I].Title := '';
+    MIDIData := TMemoryStream.Create;
+    MIDIData.SetSize(wSizes[I]);
+    F.Seek(2 + wOffsets[I], soFromBeginning);
+    F.ReadBuffer(MIDIData.Memory^, MIDIData.Size);
+    SongData_PutInt('HERAD_TmpIdx', I);
+    ReadTrackData_HERAD(MIDIData, TrackData[I]);
+    MIDIData.Free;
+    Log.Lines.Add('[+] '+IntToStr(Length(TrackData[I].Data))+' events found.');
+  end;
+  SongData_Delete('HERAD_TmpIdx');
+
+  Result := True;
+  Log.Lines.Add('');
+  Log.Lines.Add('[*] Information:');
+  LogSongInfo;
+  Progress.Position := 0;
+  Log.Lines.Add('');
+  RefTrackList;
+  CalculateEvnts;
+end;
+
 function TMainForm.ReadRaw(var F: TMemoryStream): Boolean;
 begin
   //Result := False;
@@ -3786,6 +3939,147 @@ begin
   end;
 end;
 
+procedure TMainForm.ReadTrackData_HERAD(var F: TMemoryStream; var Trk: Chunk);
+var
+  isM32, isV2: Boolean;
+  S: String;
+  Ch, B: Byte;
+  Ticks: UInt64;
+  Err: Byte;
+
+  procedure ReadBuf(var Buf; Size: Cardinal);
+  begin
+    try
+      F.ReadBuffer(Buf, Size);
+    except
+      Log.Lines.Add('[-] Error: Incomplete event (end of track reached).');
+    end;
+  end;
+begin
+  isM32 := not SongData_GetStr('HERAD_Inst#0', S);
+  B := 0;
+  SongData_GetByte('HERAD_V2', B);
+  isV2 := B > 0;
+  if not SongData_GetByte('HERAD_TmpIdx', Ch) then
+    Ch := 0;
+  if Ch >= 9 then
+    Ch := (Ch + 1) mod 16;
+  while F.Position < F.Size do begin
+    // Reading ticks count
+    Ticks := ReadVarVal(F, Err);
+    if Err = 1 then
+    begin
+      Log.Lines.Add('[-] Error: Ticks count overflow at offset '+IntToStr(F.Position)+'.');
+      Continue;
+    end;
+    if Err = 2 then begin
+      Log.Lines.Add('[-] Error: Incomplete event (end of track reached).');
+      Break;
+    end;
+    // Adding event
+    SetLength(Trk.Data, Length(Trk.Data) + 1);
+    // Initializing structure
+    Trk.Data[Length(Trk.Data) - 1].Ticks := Ticks;
+    Trk.Data[Length(Trk.Data) - 1].Status := 0;
+    Trk.Data[Length(Trk.Data) - 1].BParm1 := 0;
+    Trk.Data[Length(Trk.Data) - 1].BParm2 := 0;
+    Trk.Data[Length(Trk.Data) - 1].Value := 0;
+    Trk.Data[Length(Trk.Data) - 1].Len := 0;
+    Trk.Data[Length(Trk.Data) - 1].RunStatMode := False;
+    ReadBuf(B, 1);
+    if B >= 128 then begin
+      // Status byte found
+      if (not isM32) and (B shr 4 < $F) then
+        B := (B and $F0) or (Ch and $F);
+      Trk.Data[Length(Trk.Data) - 1].Status := B;
+    end
+    else
+    begin
+      Log.Lines.Add('[-] Error: Status byte expected at offset ' + IntToStr(F.Position - 1) + '.');
+      Continue;
+    end;
+    if isV2 and (B shr 4 = 8) then
+    begin
+      // NoteOff for HERAD v2
+      ReadBuf(B, 1);
+      if B > 127 then
+      begin
+        Log.Lines.Add('[-] Error: Parameter greater than 127 at offset ' + IntToStr(F.Position - 1) + '.');
+        B := 127;
+      end;
+      Trk.Data[Length(Trk.Data) - 1].BParm1 := B;
+      Trk.Data[Length(Trk.Data) - 1].BParm2 := 0;
+      Continue;
+    end;
+    case B shr 4 of
+      8..11:
+      begin // NoteOff, NoteOn, PolyAfterTouch, Control (2 params)
+        ReadBuf(B, 1);
+        if B > 127 then
+        begin
+          Log.Lines.Add('[-] Error: Parameter greater than 127 at offset ' + IntToStr(F.Position - 1) + '.');
+          B := 127;
+        end;
+        Trk.Data[Length(Trk.Data) - 1].BParm1 := B;
+        ReadBuf(B, 1);
+        if B > 127 then
+        begin
+          Log.Lines.Add('[-] Error: Parameter greater than 127 at offset ' + IntToStr(F.Position - 1) + '.');
+          B := 127;
+        end;
+        Trk.Data[Length(Trk.Data) - 1].BParm2 := B;
+      end;
+      12..13: begin // ProgramChange, ChanAfterTouch (1 param)
+        ReadBuf(B, 1);
+        if B > 127 then
+        begin
+          Log.Lines.Add('[-] Error: Parameter greater than 127 at offset ' + IntToStr(F.Position - 1) + '.');
+          B := 127;
+        end;
+        Trk.Data[Length(Trk.Data) - 1].BParm1 := B;
+      end;
+      14: begin // Pitch Bend - HERAD
+        ReadBuf(B, 1);
+        if not isM32 then
+        begin // 1 param / 1 byte
+          // SDB / AGD pitch bend 0x00..0x80 (can be greater)
+          Trk.Data[Length(Trk.Data) - 1].BParm1 := 0;
+          Trk.Data[Length(Trk.Data) - 1].BParm2 := B;
+        end
+        else
+        begin // 1 param / 2 byte
+          if B > $7F then
+          begin
+            Log.Lines.Add('[-] Error: Parameter greater than 127 at offset ' + IntToStr(F.Position - 1) + '.');
+            B := $7F;
+          end;
+          Trk.Data[Length(Trk.Data) - 1].BParm1 := B;
+          ReadBuf(B, 1);
+          if B > $7F then
+          begin
+            Log.Lines.Add('[-] Error: Parameter greater than 127 at offset ' + IntToStr(F.Position - 1) + '.');
+            B := $7F;
+          end;
+          Trk.Data[Length(Trk.Data) - 1].BParm2 := B;
+        end;
+        Trk.Data[Length(Trk.Data) - 1].Value :=
+        Trk.Data[Length(Trk.Data) - 1].BParm1 +
+        Trk.Data[Length(Trk.Data) - 1].BParm2 * 128;
+      end;
+      15: begin // Treat any 0xFx as track end
+        Trk.Data[Length(Trk.Data) - 1].Status := $FF;
+        Trk.Data[Length(Trk.Data) - 1].BParm1 := $2F;
+        Trk.Data[Length(Trk.Data) - 1].BParm2 := 0;
+        Trk.Data[Length(Trk.Data) - 1].Len := 0;
+        Trk.Data[Length(Trk.Data) - 1].Value := F.Size - F.Position;
+        SetLength(Trk.Data[Length(Trk.Data) - 1].DataArray, 0);
+        Trk.Data[Length(Trk.Data) - 1].DataString := '';
+        Break;
+      end;
+    end;
+  end;
+end;
+
 procedure TMainForm.WriteMIDI(var F: TMemoryStream);
 label
   Done;
@@ -4625,7 +4919,7 @@ begin
       Inc(InstCnt);
     F.WriteBuffer(InstCnt, 2);
     for I := 0 to InstCnt - 1 do
-    begin  
+    begin
       FillChar(instName, Length(instName), 0);
       SongData_GetStr('IMS_Name#'+IntToStr(I), S);
       A := AnsiString(S);
@@ -4637,6 +4931,78 @@ begin
   end;
 
   Progress.Position := 0;
+end;
+
+procedure TMainForm.WriteHERAD(var F: TMemoryStream);
+const
+  MaxTracks = 21;
+  InstLen = 40;
+var
+  W: Word;
+  I, InstCnt: Integer;
+  Speed: Single;
+  Params: Array[0..31] of Byte;
+  MIDIData: TMemoryStream;
+  S: String;
+  HERADInst: Array[0..InstLen-1] of Byte;
+begin
+  Log.Lines.Add('[*] Writing Cryo HERAD music file...');
+
+  W := 0; // InstOffset
+  F.WriteBuffer(W, 2);
+  for I := 0 to MaxTracks - 1 do
+    F.WriteBuffer(W, 2); // Track offsets
+  if not SongData_GetWord('HERAD_LoopStart', W) then
+    W := 0;
+  F.WriteBuffer(W, 2);
+  if not SongData_GetWord('HERAD_LoopEnd', W) then
+    W := 0;
+  F.WriteBuffer(W, 2);
+  if not SongData_GetWord('HERAD_LoopCount', W) then
+    W := 0;
+  F.WriteBuffer(W, 2);
+  if not SongData_GetFloat('HERAD_Speed', Speed) then
+    Speed := 1;
+  W := (Floor(Speed) shl 8) or (Floor(Frac(Speed) * 256) and $FF);
+  F.WriteBuffer(W, 2);
+  if SongData_GetArray('HERAD_Params', Params) then
+    F.WriteBuffer(Params, SizeOf(Params));
+
+  for I := 0 to Length(TrackData) - 1 do
+  begin
+    if I >= MaxTracks - 1 then
+      Break;
+    Log.Lines.Add('[*] Writing track '+IntToStr(I)+'...');
+    W := F.Position - 2;
+    F.Seek(2 + I * 2, soFromBeginning);
+    F.WriteBuffer(W, 2);
+    F.Seek(2 + W, soFromBeginning);
+    MIDIData := TMemoryStream.Create;
+    SongData_PutInt('HERAD_TmpIdx', I);
+    WriteTrackData_HERAD(MIDIData, TrackData[I]);
+    F.WriteBuffer(MIDIData.Memory^, MIDIData.Size);
+
+    Log.Lines.Add('[+] Wrote ' + IntToStr(MIDIData.Size) + ' bytes.');
+    MIDIData.Free;
+  end;
+  SongData_Delete('HERAD_TmpIdx');
+
+  W := F.Position;
+  F.Seek(0, soFromBeginning);
+  F.WriteBuffer(W, 2);
+  F.Seek(W, soFromBeginning);
+
+  InstCnt := 0;
+  while SongData_GetStr('HERAD_Inst#'+IntToStr(InstCnt), S) do
+    Inc(InstCnt);
+  for I := 0 to InstCnt - 1 do
+  begin
+    SongData_GetArray('HERAD_Inst#'+IntToStr(I), HERADInst);
+    F.WriteBuffer(HERADInst, SizeOf(HERADInst));
+  end;
+
+  Progress.Position := 0;
+  F.Seek(0, soFromEnd);
 end;
 
 procedure TMainForm.WriteRaw(var F: TMemoryStream);
@@ -4944,6 +5310,67 @@ begin
   end;
 end;
 
+procedure TMainForm.WriteTrackData_HERAD(var F: TMemoryStream; var Trk: Chunk);
+var
+  I, Ch: Integer;
+  isM32, isV2: Boolean;
+  S: String;
+  B: Byte;
+begin
+  if not SongData_GetInt('HERAD_TmpIdx', Ch) then
+    Ch := 0;
+  isM32 := not SongData_GetStr('HERAD_Inst#0', S);
+  I := 0;
+  SongData_GetInt('HERAD_V2', I);
+  isV2 := I > 0;
+  for I := 0 to Length(Trk.Data) - 1 do begin
+    WriteVarVal(F, Trk.Data[I].Ticks);
+    B := Trk.Data[I].Status;
+    if (B shr 4 < 15) and (Ch > 0) then
+      B := B and $F0;
+    F.WriteBuffer(B, 1);
+    case Trk.Data[I].Status shr 4 of
+      8: begin
+        if not isV2 then
+        begin
+          F.WriteBuffer(Trk.Data[I].BParm1, 1);
+          F.WriteBuffer(Trk.Data[I].BParm2, 1);
+        end else
+          F.WriteBuffer(Trk.Data[I].BParm1, 1);
+      end;
+      9..11: begin
+        F.WriteBuffer(Trk.Data[I].BParm1, 1);
+        F.WriteBuffer(Trk.Data[I].BParm2, 1);
+      end;
+      12,13:
+        F.WriteBuffer(Trk.Data[I].BParm1, 1);
+      14: begin
+        if isM32 then
+        begin
+          Trk.Data[I].BParm1 := Trk.Data[I].Value and 127;
+          Trk.Data[I].BParm2 := (Trk.Data[I].Value shr 7) and 127;
+          F.WriteBuffer(Trk.Data[I].BParm1, 1);
+          F.WriteBuffer(Trk.Data[I].BParm2, 1);
+        end
+        else
+        begin
+          Trk.Data[I].BParm1 := 0;
+          Trk.Data[I].BParm2 := Trk.Data[I].Value shr 7;
+          F.WriteBuffer(Trk.Data[I].BParm2, 1);
+        end;
+      end;
+      15: begin
+        B := Trk.Data[I].Value;
+        while B > 0 do
+        begin
+          F.WriteBuffer(Trk.Data[I].Status, 1);
+          Dec(B);
+        end;
+      end;
+    end;
+  end;
+end;
+
 procedure TMainForm.WriteTrackData_SYX(var F: TMemoryStream; var Trk: Chunk);
 var
   I: Integer;
@@ -5095,6 +5522,21 @@ begin
       C.BParm1 := B;
     end;
   end;
+end;
+
+procedure TMainForm.Convert_MID_FixTempo;
+var
+  InitTempo: Cardinal;
+begin
+  if not SongData_GetDWord('InitTempo', InitTempo) then
+    InitTempo := MIDIStdTempo;
+  if InitTempo = MIDIStdTempo then
+    Exit;
+  if Length(TrackData) = 0 then
+    Exit;
+  NewEvent(0, 0, $FF, $51);
+  TrackData[0].Data[0].Value := InitTempo;
+  SongData_PutDWord('InitTempo', MIDIStdTempo);
 end;
 
 procedure TMainForm.Convert_XMI_MID;
@@ -8867,6 +9309,13 @@ begin
   Log.Lines.Add('[+] Done.');
 end;
 
+procedure TMainForm.Convert_HERAD_MID;
+begin
+  Log.Lines.Add('[*] Converting Cryo HERAD to Standard MIDI...');
+  Convert_MID_FixTempo;
+  Log.Lines.Add('[+] Done.');
+end;
+
 procedure TMainForm.RefTrackList;
 var
   I: Integer;
@@ -9297,6 +9746,7 @@ begin
   MFormatIMS.Enabled := True;
   MFormatMDI.Enabled := True;
   MFormatCMF.Enabled := True;
+  MFormatHERAD.Enabled := True;
   MFormatMID.Checked := False;
   MFormatXMI.Checked := False;
   MFormatROL.Checked := False;
@@ -9304,6 +9754,7 @@ begin
   MFormatIMS.Checked := False;
   MFormatMDI.Checked := False;
   MFormatCMF.Checked := False;
+  MFormatHERAD.Checked := False;
   MProfileMID.Enabled := True;
   MProfileXMI.Enabled := True;
   MProfileROL.Enabled := True;
@@ -9311,6 +9762,7 @@ begin
   MProfileIMS.Enabled := True;
   MProfileMDI.Enabled := True;
   MProfileCMF.Enabled := True;
+  MProfileHERAD.Enabled := True;
   MProfileMID.Checked := False;
   MProfileXMI.Checked := False;
   MProfileROL.Checked := False;
@@ -9318,6 +9770,7 @@ begin
   MProfileIMS.Checked := False;
   MProfileMDI.Checked := False;
   MProfileCMF.Checked := False;
+  MProfileHERAD.Checked := False;
   if EventProfile = 'mid' then begin
     MFormatMID.Checked := True;
     MFormatMID.Enabled := False;
@@ -9373,6 +9826,14 @@ begin
   if EventViewProfile = 'cmf' then begin
     MProfileCMF.Checked := True;
     MProfileCMF.Enabled := False;
+  end;
+  if EventProfile = 'herad' then begin
+    MFormatHERAD.Checked := True;
+    MFormatHERAD.Enabled := False;
+  end;
+  if EventViewProfile = 'herad' then begin
+    MProfileHERAD.Checked := True;
+    MProfileHERAD.Enabled := False;
   end;
 end;
 
@@ -11331,6 +11792,13 @@ begin
       EventFormat := 'mus';
       EventProfile := 'ims';
     end;
+    if (Ext = '.sdb')
+    or (Ext = '.agd')
+    or (Ext = '.m32') then begin
+      Container := 'herad';
+      EventFormat := 'herad';
+      EventProfile := 'herad';
+    end;
     if (Ext = '.raw') then begin
       Container := 'raw';
       EventFormat := 'mid';
@@ -11388,6 +11856,11 @@ begin
       EventFormat := 'mus';
       EventProfile := 'ims';
     end;
+    if Fmt = 'herad' then begin
+      Container := 'herad';
+      EventFormat := 'herad';
+      EventProfile := 'herad';
+    end;
     if Fmt = 'raw' then begin
       Container := 'raw';
       EventFormat := 'mid';
@@ -11442,6 +11915,9 @@ begin
     end;
     if Container = 'ims' then begin
       Opened := ReadMUS(M, FileName);
+    end;
+    if Container = 'herad' then begin
+      Opened := ReadHERAD(M);
     end;
     if Container = 'raw' then begin
       Opened := ReadRaw(M);
@@ -11525,6 +12001,14 @@ begin
     TargetEventFormat := 'mid';
     TargetEventProfile := 'cmf';
   end;
+  if (Ext = '.sdb')
+  or (Ext = '.agd')
+  or (Ext = '.m32')
+  then begin
+    TargetContainer := 'herad';
+    TargetEventFormat := 'herad';
+    TargetEventProfile := 'herad';
+  end;
   if (Ext = '.raw')
   then begin
     TargetContainer := 'raw';
@@ -11589,6 +12073,14 @@ begin
     if TargetEventProfile = 'ims' then
       ConvertEvents('ims');
     WriteMUS(M, FileName);
+    Result := True;
+  end;
+  if TargetContainer = 'herad' then begin
+    if TargetEventFormat = 'herad' then
+      EventFormat := 'herad';
+    if TargetEventProfile = 'herad' then
+      ConvertEvents('herad');
+    WriteHERAD(M);
     Result := True;
   end;
   if TargetContainer = 'raw' then begin
@@ -11717,6 +12209,8 @@ begin
       Fmt := 'ims';
     if Pos('*.mdi', FilterExt) > 0 then
       Fmt := 'mdi';
+    if Pos('*.sdb', FilterExt) > 0 then
+      Fmt := 'herad';
     if Pos('*.raw', FilterExt) > 0 then
       Fmt := 'raw';
     if Pos('*.syx', FilterExt) > 0 then
@@ -12347,13 +12841,26 @@ begin
   ChkButtons;
 end;
 
+procedure TMainForm.MFormatHERADClick(Sender: TObject);
+var
+  Idx: Integer;
+begin
+  Idx := TrkCh.ItemIndex;
+  ConvertEvents('herad');
+  RefTrackList;
+  TrkCh.ItemIndex := Idx;
+  FillEvents(TrkCh.ItemIndex);
+  CalculateEvnts;
+  ChkButtons;
+end;
+
 procedure TMainForm.FillEvents(Idx: Integer);
 var
   I, J, Cnt: Integer;
   S: String;
   Speed: Double;
   Fl: Single;
-  Rhythm, Bl: Boolean;
+  Rhythm, Bl, HERAD_M32, HERAD_V2: Boolean;
   InitTempo: Cardinal;
 begin
   if (Idx < 0) or (Idx >= Length(TrackData)) then
@@ -13008,6 +13515,26 @@ begin
         end;
       end;
     end;
+
+    if EventViewProfile = 'herad' then begin
+      HERAD_M32 := not SongData_GetStr('HERAD_Inst#0', S);
+      if not SongData_GetInt('HERAD_V2', J) then
+        J := 0;
+      HERAD_V2 := J > 0;
+      case TrackData[Idx].Data[I].Status shr 4 of
+        8: begin // NoteOff
+          if HERAD_V2 then
+            Events.Cells[4,I+1] :=
+            'Note = ' + IntToStr(TrackData[Idx].Data[I].BParm1) +
+            ' (' + NoteNum(TrackData[Idx].Data[I].BParm1) + ')';
+        end;
+        12: begin // Program Change
+          if not HERAD_M32 then
+            Events.Cells[4,I+1] :=
+            'Instrument = ' + IntToStr(TrackData[Idx].Data[I].BParm1);
+        end;
+      end;
+    end;
     Inc(Cnt);
   end; // track read
 end;
@@ -13124,6 +13651,17 @@ begin
     or (LowerCase(ExtractFileExt(FileName)) <> '.mdi')
     then
       FileName := FileName + '.mdi';
+  end;
+  if Pos('*.sdb', FilterExt) > 0 then
+  begin
+    if (ExtractFileExt(FileName) = '')
+    or (
+        (LowerCase(ExtractFileExt(FileName)) <> '.sdb')
+    and (LowerCase(ExtractFileExt(FileName)) <> '.agd')
+    and (LowerCase(ExtractFileExt(FileName)) <> '.m32')
+    )
+    then
+      FileName := FileName + '.sdb';
   end;
   if Pos('*.raw', FilterExt) > 0 then
   begin
@@ -13472,6 +14010,10 @@ end;
 procedure TMainForm.ConvertEvents(DestProfile: AnsiString);
 begin
   if EventProfile = 'mid' then begin
+    if (DestProfile = 'mid')
+    or (DestProfile = 'mdi') then begin
+      Convert_MID_FixTempo;
+    end;
     if DestProfile = 'xmi' then begin
       Convert_MID_XMI;
       EventProfile := 'xmi';
@@ -13558,6 +14100,13 @@ begin
       Convert_IMS_ROL;
       EventProfile := 'rol';
       EventViewProfile := 'rol';
+    end;
+  end;
+  if EventProfile = 'herad' then begin
+    if DestProfile = 'mid' then begin
+      Convert_HERAD_MID;
+      EventProfile := 'mid';
+      EventViewProfile := 'mid';
     end;
   end;
 end;
@@ -13946,6 +14495,14 @@ end;
 procedure TMainForm.MProfileIMSClick(Sender: TObject);
 begin
   EventViewProfile := 'ims';
+  FillEvents(TrkCh.ItemIndex);
+  CalculateEvnts;
+  ChkButtons;
+end;
+
+procedure TMainForm.MProfileHERADClick(Sender: TObject);
+begin
+  EventViewProfile := 'herad';
   FillEvents(TrkCh.ItemIndex);
   CalculateEvnts;
   ChkButtons;
