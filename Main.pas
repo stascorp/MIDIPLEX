@@ -338,6 +338,7 @@ type
     bRecord: TBitBtn;
     MFormatHERAD: TMenuItem;
     MProfileHERAD: TMenuItem;
+    MDelTracks: TMenuItem;
     procedure BtOpenClick(Sender: TObject);
     procedure FormCreate(Sender: TObject);
     procedure TrkChChange(Sender: TObject);
@@ -530,6 +531,7 @@ type
     procedure bRecordClick(Sender: TObject);
     procedure MFormatHERADClick(Sender: TObject);
     procedure MProfileHERADClick(Sender: TObject);
+    procedure MDelTracksClick(Sender: TObject);
   private
     { Private declarations }
     procedure OnEventChange(var Msg: TMessage); message WM_EVENTIDX;
@@ -9657,6 +9659,7 @@ begin
   bRecord.Enabled := Opened and (MIDIThrId = 0) and (PlayerMode <> PLAY_REC);
   MDelTrack.Enabled := Length(TrackData) > 0;
   BDelTrack.Enabled := Length(TrackData) > 0;
+  MDelTracks.Enabled := Length(TrackData) > 1;
   Label1.Enabled := Length(TrackData) > 0;
   TrkCh.Enabled := Length(TrackData) > 0;
   Events.Enabled := Length(TrackData) > 0;
@@ -10132,15 +10135,33 @@ begin
   Idx := TrkCh.ItemIndex;
   DelTrack(Idx);
   RefTrackList;
-  if Length(TrackData) = 0 then
-    ChkButtons
-  else begin
+  if Length(TrackData) > 0 then
+  begin
     if Idx<Length(TrackData) then
       TrkCh.ItemIndex := Idx
     else
       TrkCh.ItemIndex := Idx - 1;
     FillEvents(TrkCh.ItemIndex);
   end;
+  ChkButtons;
+  CalculateEvnts;
+end;
+
+procedure TMainForm.MDelTracksClick(Sender: TObject);
+var
+  Idx, I: Integer;
+begin
+  Idx := TrkCh.ItemIndex;
+  for I := Length(TrackData) - 1 downto 0 do
+    if I <> Idx then
+      DelTrack(I);
+  RefTrackList;
+  if Length(TrackData) > 0 then
+  begin
+    TrkCh.ItemIndex := 0;
+    FillEvents(TrkCh.ItemIndex);
+  end;
+  ChkButtons;
   CalculateEvnts;
 end;
 

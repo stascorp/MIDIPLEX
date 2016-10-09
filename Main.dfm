@@ -865,6 +865,11 @@ object MainForm: TMainForm
         ShortCut = 32836
         OnClick = BDelTrackClick
       end
+      object MDelTracks: TMenuItem
+        Caption = 'Delete other tracks'
+        ShortCut = 41028
+        OnClick = MDelTracksClick
+      end
       object N4: TMenuItem
         Caption = '-'
       end
