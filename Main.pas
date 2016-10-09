@@ -710,6 +710,38 @@ begin
   SongData.InsertRow(Name, Val, True);
 end;
 
+procedure SongData_PutArray(Name: String; A: Array of Byte); overload;
+var
+  I, Row: Integer;
+  S: String;
+begin
+  S := '';
+  for I := 0 to Length(A) - 1 do
+    S := S + IntToStr(A[I]) + ' ';
+  if SongData.FindRow(Name, Row) then
+  begin
+    SongData.Cells[1, Row] := S;
+    Exit;
+  end;
+  SongData.InsertRow(Name, S, True);
+end;
+
+procedure SongData_PutArray(Name: String; A: Array of Word); overload;
+var
+  I, Row: Integer;
+  S: String;
+begin
+  S := '';
+  for I := 0 to Length(A) - 1 do
+    S := S + IntToStr(A[I]) + ' ';
+  if SongData.FindRow(Name, Row) then
+  begin
+    SongData.Cells[1, Row] := S;
+    Exit;
+  end;
+  SongData.InsertRow(Name, S, True);
+end;
+
 function SongData_GetByte(Name: String; var B: Byte): Boolean;
 var
   Row, Code: Integer;
@@ -788,6 +820,78 @@ begin
   if not SongData.FindRow(Name, Row) then
     Exit;
   S := SongData.Cells[1, Row];
+  Result := True;
+end;
+
+function SongData_GetArrayLen(Name: String): Cardinal;
+var
+  Row: Integer;
+  SL: TStringList;
+begin
+  Result := 0;
+  if not SongData.FindRow(Name, Row) then
+    Exit;
+  SL := TStringList.Create;
+  SL.Delimiter := ' ';
+  SL.StrictDelimiter := True;
+  SL.DelimitedText := SongData.Cells[1, Row];
+  Result := SL.Count;
+  SL.Free;
+end;
+
+function SongData_GetArray(Name: String; var A: Array of Byte): Boolean; overload;
+var
+  Row, I: Integer;
+  S: String;
+  SL: TStringList;
+begin
+  Result := False;
+  if not SongData.FindRow(Name, Row) then
+    Exit;
+  S := SongData.Cells[1, Row];
+  SL := TStringList.Create;
+  SL.Delimiter := ' ';
+  SL.StrictDelimiter := True;
+  SL.DelimitedText := S;
+  for I := 0 to SL.Count - 1 do
+  begin
+    if I >= Length(A) then
+      Break;
+    try
+      A[I] := StrToInt(SL[I]) and $FF;
+    except
+      A[I] := 0;
+    end;
+  end;
+  SL.Free;
+  Result := True;
+end;
+
+function SongData_GetArray(Name: String; var A: Array of Word): Boolean; overload;
+var
+  Row, I: Integer;
+  S: String;
+  SL: TStringList;
+begin
+  Result := False;
+  if not SongData.FindRow(Name, Row) then
+    Exit;
+  S := SongData.Cells[1, Row];
+  SL := TStringList.Create;
+  SL.Delimiter := ' ';
+  SL.StrictDelimiter := True;
+  SL.DelimitedText := S;
+  for I := 0 to SL.Count - 1 do
+  begin
+    if I >= Length(A) then
+      Break;
+    try
+      A[I] := StrToInt(SL[I]) and $FFFF;
+    except
+      A[I] := 0;
+    end;
+  end;
+  SL.Free;
   Result := True;
 end;
 
@@ -1569,9 +1673,8 @@ var
   dwDataSize: DWord;
   Instruments: Array of CMFInstrument;
   MIDIData: TMemoryStream;
-  S: String;
   sTitle, sComposer, sRemarks: AnsiString;
-  I, J: Integer;
+  I: Integer;
 begin
   Result := False;
   Log.Lines.Add('[*] Reading Creative Music File...');
@@ -1642,12 +1745,7 @@ begin
   SongData_PutInt('CMF_Tempo', iTempo);
 
   for I := 0 to Length(Instruments) - 1 do
-  begin
-    S := '';
-    for J := 0 to 10 do
-      S := S + IntToStr(Instruments[I][J]) + ' ';
-    SongData_PutStr('CMF_Inst#' + IntToStr(I), S);
-  end;
+    SongData_PutArray('CMF_Inst#' + IntToStr(I), Instruments[I]);
 
   if iOffsetTitle >= F.Size then
   begin
@@ -1723,10 +1821,10 @@ var
   W, numUsed, numInstruments: Word;
   offsetName, offsetData: DWord;
   Sign: Array[0..5] of AnsiChar;
-  I, J: Integer;
+  I: Integer;
   B: Byte;
   Name: Array[0..8] of AnsiChar;
-  S: String;
+  Inst: Array[0..13+13+2-1] of Byte;
 begin
   Result := False;
   M := TMemoryStream.Create;
@@ -1795,13 +1893,8 @@ begin
     SongData_PutInt('BNK_Perc#'+IntToStr(I), B);
     M.ReadBuffer(B, 1);
     SongData_PutInt('BNK_Chan#'+IntToStr(I), B);
-    S := '';
-    for J := 0 to (13+13+2) - 1 do
-    begin
-      M.ReadBuffer(B, 1);
-      S := S + IntToStr(B) + ' ';
-    end;
-    SongData_PutStr('BNK_Data#'+IntToStr(I), S);
+    M.ReadBuffer(Inst, Length(Inst));
+    SongData_PutArray('BNK_Data#'+IntToStr(I), Inst);
   end;
   M.Free;
   Result := True;
@@ -2003,9 +2096,9 @@ var
   M: TMemoryStream;
   W: Word;
   InstCnt, InstOff: Word;
-  I, J: Integer;
+  I: Integer;
   Name: Array[0..8] of AnsiChar;
-  S: String;
+  Inst: Array[0..13+13+2] of Word;
 begin
   Result := False;
   M := TMemoryStream.Create;
@@ -2048,13 +2141,8 @@ begin
   end;
   for I := 0 to InstCnt - 1 do
   begin
-    S := '';
-    for J := 0 to (13+13+2) - 1 do
-    begin
-      M.ReadBuffer(W, 2);
-      S := S + IntToStr(W) + ' ';
-    end;
-    SongData_PutStr('SND_Data#'+IntToStr(I), S);
+    M.ReadBuffer(Inst, SizeOf(Inst));
+    SongData_PutArray('SND_Data#'+IntToStr(I), Inst);
   end;
   M.Free;
   Result := True;
@@ -3968,13 +4056,12 @@ const
 var
   NewVer: Boolean;
   W: Word;
-  B: Byte;
   iInstrumentCount: Word;
   iChannelInUse: Array[0..15] of Byte;
   MIDIData: TMemoryStream;
+  CMFInst: Array[0..15] of Byte;
   S: String;
   I, J: Integer;
-  SL: TStringList;
 begin
   Log.Lines.Add('[*] Writing Creative Music File...');
 
@@ -4059,27 +4146,8 @@ begin
     F.Seek(W, soFromBeginning);
     for I := 0 to iInstrumentCount - 1 do
     begin
-      SongData_GetStr('CMF_Inst#'+IntToStr(I), S);
-      SL := TStringList.Create;
-      SL.Delimiter := ' ';
-      SL.StrictDelimiter := True;
-      SL.DelimitedText := S;
-      for J := 0 to 11 - 1 do
-      begin
-        try
-          B := StrToInt(SL[J]);
-        except
-          B := 0;
-        end;
-        F.WriteBuffer(B, 1);
-      end;
-      B := 0; // Padding
-      F.WriteBuffer(B, 1);
-      F.WriteBuffer(B, 1);
-      F.WriteBuffer(B, 1);
-      F.WriteBuffer(B, 1);
-      F.WriteBuffer(B, 1);
-      SL.Free;
+      SongData_GetArray('CMF_Inst#'+IntToStr(I), CMFInst);
+      F.WriteBuffer(CMFInst, SizeOf(CMFInst));
     end;
   end;
 
@@ -4119,6 +4187,7 @@ var
   B: Byte;
   A: AnsiString;
   Name: Array[0..8] of AnsiChar;
+  Inst: Array[0..13+13+2-1] of Byte;
   SL: TStringList;
 begin
   Result := False;
@@ -4193,21 +4262,8 @@ begin
     if not SongData_GetByte('BNK_Chan#'+IntToStr(I), B) then
       B := 0;
     M.WriteBuffer(B, 1);
-    SongData_GetStr('BNK_Data#'+IntToStr(I), S);
-    SL := TStringList.Create;
-    SL.Delimiter := ' ';
-    SL.StrictDelimiter := True;
-    SL.DelimitedText := S;
-    for J := 0 to (13+13+2) - 1 do
-    begin
-      try
-        B := StrToInt(SL[J]);
-      except
-        B := 0;
-      end;
-      M.WriteBuffer(B, 1);
-    end;
-    SL.Free;
+    SongData_GetArray('BNK_Data#'+IntToStr(I), Inst);
+    M.WriteBuffer(Inst, SizeOf(Inst));
   end;
 
   Result := True;
@@ -4396,11 +4452,11 @@ function MUS_SaveBank(FileName: String): Boolean;
 var
   M: TMemoryStream;
   W, InstCnt: Word;
-  I, J: Integer;
+  I: Integer;
   S: String;
   A: AnsiString;
   Name: Array[0..8] of AnsiChar;
-  SL: TStringList;
+  Inst: Array[0..13+13+2-1] of Word;
 begin
   Result := False;
   InstCnt := 0;
@@ -4431,21 +4487,8 @@ begin
 
   for I := 0 to InstCnt - 1 do
   begin
-    SongData_GetStr('SND_Data#'+IntToStr(I), S);
-    SL := TStringList.Create;
-    SL.Delimiter := ' ';
-    SL.StrictDelimiter := True;
-    SL.DelimitedText := S;
-    for J := 0 to (13+13+2) - 1 do
-    begin
-      try
-        W := StrToInt(SL[J]);
-      except
-        W := 0;
-      end;
-      M.WriteBuffer(W, 2);
-    end;
-    SL.Free;
+    SongData_GetArray('SND_Data#'+IntToStr(I), Inst);
+    M.WriteBuffer(Inst, SizeOf(Inst));
   end;
 
   Result := True;
@@ -6441,12 +6484,10 @@ type
   end;
   PCMFInstrument = ^TCMFInstrument;
 var
-  I, J, K: Integer;
+  I, J: Integer;
   Rhythm: Boolean;
   Division: Word;
-  S: String;
-  SL: TStringList;
-  CMFInst: Array[0..11-1] of Byte;
+  CMFInst: Array[0..15] of Byte;
   MDIInst: Array[0..13+13+2-1] of Byte;
   PCMF: PCMFInstrument;
   PMDI: PMDIInstrument;
@@ -6552,24 +6593,12 @@ begin
         end;
         12: // Program Change
         begin
-          if not SongData_GetStr('CMF_Inst#'+IntToStr(TrackData[I].Data[J].BParm1), S) then
+          FillChar(CMFInst, SizeOf(CMFInst), 0);
+          if not SongData_GetArray('CMF_Inst#'+IntToStr(TrackData[I].Data[J].BParm1), CMFInst) then
           begin
             DelEvent(I, J, True);
             Continue;
           end;
-          SL := TStringList.Create;
-          SL.Delimiter := ' ';
-          SL.StrictDelimiter := True;
-          SL.DelimitedText := S;
-          for K := 0 to 11 - 1 do
-          begin
-            try
-              CMFInst[K] := StrToInt(SL[K]);
-            except
-              CMFInst[K] := 0;
-            end;
-          end;
-          SL.Free;
           FillChar(MDIInst, SizeOf(MDIInst), 0);
           PCMF := @CMFInst[0];
           PMDI := @MDIInst[0];
@@ -6686,7 +6715,7 @@ var
   I,J,K,Idx: Integer;
   Rhythm: Boolean;
   Division: Word;
-  Tempo, S: String;
+  Tempo: String;
   CMFInst: Array[0..11-1] of Byte;
   PCMF: PCMFInstrument;
   PMDI: PMDIInstrument;
@@ -6956,10 +6985,7 @@ begin
       PCMF^.iFeedback :=
       ((not PMDI^.oplModulator.conn) and 1) or
       (PMDI^.oplModulator.feedback and 7 shl 1);
-      S := '';
-      for J := 0 to Length(CMFInst) - 1 do
-        S := S + IntToStr(CMFInst[J]) + ' ';
-      SongData_PutStr('CMF_Inst#'+IntToStr(I), S);
+      SongData_PutArray('CMF_Inst#'+IntToStr(I), CMFInst);
       Dispose(P);
     end;
     Insts.Clear;
@@ -7234,20 +7260,7 @@ begin
   begin
     New(Inst);
     SongData_GetStr('SND_Name#'+IntToStr(I), Inst^.Name);
-    SongData_GetStr('SND_Data#'+IntToStr(I), S);
-    L := TStringList.Create;
-    L.Delimiter := ' ';
-    L.StrictDelimiter := True;
-    L.DelimitedText := S;
-    for J := 0 to (13+13+2) - 1 do
-    begin
-      try
-        Inst^.Data[J] := StrToInt(L[J]) and $FF;
-      except
-        Inst^.Data[J] := 0;
-      end;
-    end;
-    L.Free;
+    SongData_GetArray('SND_Data#'+IntToStr(I), Inst^.Data);
     Insts.Add(Inst);
   end;
   I := TrkCh.ItemIndex;
@@ -7657,10 +7670,7 @@ begin
     SongData_PutStr('BNK_Name#'+IntToStr(I), Inst^.Name);
     SongData_PutInt('BNK_Perc#'+IntToStr(I), Inst^.Perc);
     SongData_PutInt('BNK_Chan#'+IntToStr(I), Inst^.Chan);
-    S := '';
-    for J := 0 to (13+13+2) - 1 do
-      S := S + IntToStr(Inst^.Data[J]) + ' ';
-    SongData_PutStr('BNK_Data#'+IntToStr(I), S);
+    SongData_PutArray('BNK_Data#'+IntToStr(I), Inst^.Data);
     Dispose(Inst);
   end;
   Insts.Free;
@@ -8190,10 +8200,7 @@ begin
     SongData_PutStr('BNK_Name#'+IntToStr(I), Inst^.Name);
     SongData_PutInt('BNK_Perc#'+IntToStr(I), Inst^.Perc);
     SongData_PutInt('BNK_Chan#'+IntToStr(I), Inst^.Chan);
-    S := '';
-    for J := 0 to (13+13+2) - 1 do
-      S := S + IntToStr(Inst^.Data[J]) + ' ';
-    SongData_PutStr('BNK_Data#'+IntToStr(I), S);
+    SongData_PutArray('BNK_Data#'+IntToStr(I), Inst^.Data);
     Dispose(Inst);
   end;
   Insts.Free;
