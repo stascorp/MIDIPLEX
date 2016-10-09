@@ -1161,7 +1161,7 @@ begin
     Division := B;
     if SMPTE >= 0 then
       Division := Division or (SMPTE shl 8);
-    SongData_PutDWord('InitTempo', 500000);
+    SongData_PutDWord('InitTempo', MIDIStdTempo);
     SongData_PutInt('SMPTE', SMPTE);
     SongData_PutInt('Division', Division);
 
@@ -1196,7 +1196,7 @@ begin
     SongData_PutInt('MIDIType', 1);
     SongData_PutInt('SMPTE', 0);
     SongData_PutInt('Division', 96);
-    SongData_PutDWord('InitTempo', 500000);
+    SongData_PutDWord('InitTempo', MIDIStdTempo);
 
     Log.Lines.Add('[*] Checking tracks...');
     Tracks := 0;
@@ -1355,7 +1355,7 @@ begin
   end;
   F.Seek(FNodes[0].DataOffs, soFromBeginning);
   F.ReadBuffer(Division, 2);
-  SongData_PutDWord('InitTempo', 500000);
+  SongData_PutDWord('InitTempo', MIDIStdTempo);
   SongData_PutInt('SMPTE', 0);
   SongData_PutInt('Division', Division);
   IFFSearchNode(Nodes, FNodes, 'data');
@@ -1493,7 +1493,7 @@ begin
       Exit;
     end;
 
-  SongData_PutDWord('InitTempo', 500000);
+  SongData_PutDWord('InitTempo', MIDIStdTempo);
   SongData_PutInt('SMPTE', 0);
   SongData_PutInt('Division', 60);
 
@@ -2263,7 +2263,7 @@ begin
   SongData_PutInt('MIDIType', 1);
   SongData_PutInt('SMPTE', 0);
   SongData_PutInt('Division', 96);
-  SongData_PutDWord('InitTempo', 500000);
+  SongData_PutDWord('InitTempo', MIDIStdTempo);
   Result := True;
   Log.Lines.Add('');
   Log.Lines.Add('[*] Default settings:');
@@ -2289,7 +2289,7 @@ begin
   SongData_PutInt('MIDIType', 1);
   SongData_PutInt('SMPTE', 0);
   SongData_PutInt('Division', 96);
-  SongData_PutDWord('InitTempo', 500000);
+  SongData_PutDWord('InitTempo', MIDIStdTempo);
   Result := True;
   Log.Lines.Add('');
   Log.Lines.Add('[*] Default settings:');
@@ -5073,7 +5073,7 @@ begin
   Log.Lines.Add('[*] Converting Extended MIDI to Standard MIDI...');
   Application.ProcessMessages;
   if not SongData_GetDWord('InitTempo', InitTempo) then
-    InitTempo := 500000;
+    InitTempo := MIDIStdTempo;
   Tempo := InitTempo;
   for I := 0 to Length(TrackData)-1 do
   begin
@@ -5221,7 +5221,7 @@ begin
   Log.Lines.Add('[*] Converting Standard MIDI to Extended MIDI...');
   Application.ProcessMessages;
   if not SongData_GetDWord('InitTempo', InitTempo) then
-    InitTempo := 500000;
+    InitTempo := MIDIStdTempo;
   Tempo := InitTempo;
   SongData_GetWord('MIDIType', Ver);
   SongData_GetWord('Division', Division);
@@ -5353,7 +5353,7 @@ begin
     Log.Lines.Add('[-] Ticks Per Beat is not defined.');
     Exit;
   end;
-  NewTempo := 500000;
+  NewTempo := MIDIStdTempo;
   TickFactor := 60000000 / TPB / NewTempo;
   if SongData_GetInt('MUS_Percussive', I) then
     Rhythm := I > 0
@@ -5565,7 +5565,7 @@ begin
     Log.Lines.Add('[-] Ticks Per Beat is not defined.');
     Exit;
   end;
-  NewTempo := 500000;
+  NewTempo := MIDIStdTempo;
   TickFactor := 60000000 / TPB / NewTempo;
   for I := 0 to Length(TrackData) - 1 do begin
     // Step 1: Convert events
@@ -6396,7 +6396,7 @@ begin
   SongData.Strings.Clear;
 
   SongData_PutInt('MIDIType', 0);
-  SongData_PutDWord('InitTempo', 500000);
+  SongData_PutDWord('InitTempo', MIDIStdTempo);
   SongData_PutInt('SMPTE', 0);
   SongData_PutInt('Division', Division);
   Log.Lines.Add('[+] Done.');
@@ -6632,7 +6632,7 @@ begin
   SongData.Strings.Clear;
 
   SongData_PutInt('MIDIType', 0);
-  SongData_PutDWord('InitTempo', 500000);
+  SongData_PutDWord('InitTempo', MIDIStdTempo);
   SongData_PutInt('SMPTE', 0);
   SongData_PutInt('Division', Division);
   Log.Lines.Add('[+] Done.');
@@ -6990,7 +6990,7 @@ begin
   Rhythm := I = 0;
   if not SongData_GetWord('ROL_TicksPerBeat', TPB) then
     TPB := 4;
-  NewTempo := 500000;
+  NewTempo := MIDIStdTempo;
   TickFactor := 60000000 / TPB / NewTempo;
   Application.ProcessMessages;
 
@@ -7709,7 +7709,7 @@ var
 begin
   Log.Lines.Add('[*] Converting AdLib MDI to AdLib ROL...');
   if not SongData_GetDWord('InitTempo', InitTempo) then
-    InitTempo := 500000;
+    InitTempo := MIDIStdTempo;
   TPB := 60000000 div InitTempo;
   if not SongData_GetWord('Division', Division) then
     Division := 420;
@@ -8226,7 +8226,7 @@ begin
     Log.Lines.Add('[-] Ticks Per Beat is not defined.');
     Exit;
   end;
-  NewTempo := 500000;
+  NewTempo := MIDIStdTempo;
   TickFactor := 60000000 / TPB / NewTempo;
   if SongData_GetInt('MUS_Percussive', I) then
     Rhythm := I > 0
@@ -10647,7 +10647,7 @@ begin
   if not SongData_GetWord('MIDIType', Ver) then
     Ver := 1;
   if not SongData_GetDWord('InitTempo', InitTempo) then
-    InitTempo := 500000;
+    InitTempo := MIDIStdTempo;
   if not SongData_GetWord('Division', Division) then
     Division := 96;
 
@@ -11152,7 +11152,8 @@ function GetTempo(Trk, Idx: Integer): Cardinal;
 var
   I: Integer;
 begin
-  Result := 500000;
+  if not SongData_GetDWord('InitTempo', Result) then
+    Result := MIDIStdTempo;
   if (Trk < 0) or (Trk >= Length(TrackData)) then
     Exit;
   if (Idx < 0) or (Idx >= Length(TrackData[Trk].Data)) then
@@ -13023,7 +13024,7 @@ begin
   SongData_PutInt('MIDIType', 1);
   SongData_PutInt('SMPTE', 0);
   SongData_PutInt('Division', 96);
-  SongData_PutDWord('InitTempo', 500000);
+  SongData_PutDWord('InitTempo', MIDIStdTempo);
   Log.Lines.Add('[*] New sequence created.');
   TrkCh.ItemIndex := -1;
   BAddTrackClick(Sender);

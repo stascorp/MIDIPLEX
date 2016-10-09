@@ -9,6 +9,7 @@ function GetManufacturerID(Data: Cardinal; var Len: Byte): AnsiString;
 function SysExProcess(Data: Array of Byte): AnsiString;
 
 const
+  MIDIStdTempo = 500000;
   InstrumentTable: Array[0..127] of AnsiString =
   (
     'Acoustic Grand Piano', 'Bright Acoustic Piano', 'Electric Grand Piano', 'Honky-Tonk Piano',
