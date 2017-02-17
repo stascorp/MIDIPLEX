@@ -712,8 +712,9 @@ object MainForm: TMainForm
       'orc|MIDI Stream (*.mds;*.mids)|*.mds;*.mids|Miles Extended MIDI ' +
       '(*.xmi)|*.xmi|Creative Music File (*.cmf)|*.cmf|AdLib ROL (*.rol' +
       ')|*.rol|AdLib MUS (*.mus)|*.mus|AdLib IMS (*.ims)|*.ims|AdLib MD' +
-      'I (*.mdi)|*.mdi|Cryo HERAD (*.sdb;*.agd;*.m32)|*.sdb;*.agd;*.m32' +
-      '|Raw MIDI data (Standard)|*.raw|System Exclusive data|*.syx'
+      'I (*.mdi)|*.mdi|Sopepos'#39' Note (*.sop)|*.sop|Cryo HERAD (*.sdb;*.' +
+      'agd;*.m32)|*.sdb;*.agd;*.m32|Raw MIDI data (Standard)|*.raw|Syst' +
+      'em Exclusive data|*.syx'
     Title = 'Open MIDI File'
     Left = 256
     Top = 40
@@ -939,6 +940,10 @@ object MainForm: TMainForm
           Caption = 'AdLib MDI'
           OnClick = MFormatMDIClick
         end
+        object MFormatSOP: TMenuItem
+          Caption = 'Sopepos Note'
+          OnClick = MFormatSOPClick
+        end
         object MFormatCMF: TMenuItem
           Caption = 'Creative Music File'
           OnClick = MFormatCMFClick
@@ -997,6 +1002,10 @@ object MainForm: TMainForm
         object MProfileMDI: TMenuItem
           Caption = 'AdLib MDI'
           OnClick = MProfileMDIClick
+        end
+        object MProfileSOP: TMenuItem
+          Caption = 'Sopepos Note'
+          OnClick = MProfileSOPClick
         end
         object MProfileCMF: TMenuItem
           Caption = 'Creative Music File'
@@ -1656,8 +1665,9 @@ object MainForm: TMainForm
       '(*.rmi;*.rmid)|*.rmi;*.rmid|Miles Extended MIDI (*.xmi)|*.xmi|Cr' +
       'eative Music File (*.cmf)|*.cmf|AdLib ROL (*.rol)|*.rol|AdLib MU' +
       'S (*.mus)|*.mus|AdLib IMS (*.ims)|*.ims|AdLib MDI (*.mdi)|*.mdi|' +
-      'Cryo HERAD (*.sdb;*.agd;*.m32)|*.sdb;*.agd;*.m32|Raw MIDI data (' +
-      'Standard)|*.raw|System Exclusive data|*.syx'
+      'Sopepos'#39' Note (*.sop)|*.sop|Cryo HERAD (*.sdb;*.agd;*.m32)|*.sdb' +
+      ';*.agd;*.m32|Raw MIDI data (Standard)|*.raw|System Exclusive dat' +
+      'a|*.syx'
     Options = [ofOverwritePrompt, ofHideReadOnly, ofEnableSizing]
     Title = 'Save MIDI File'
     Left = 384

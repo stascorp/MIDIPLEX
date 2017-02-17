@@ -339,6 +339,8 @@ type
     MFormatHERAD: TMenuItem;
     MProfileHERAD: TMenuItem;
     MDelTracks: TMenuItem;
+    MProfileSOP: TMenuItem;
+    MFormatSOP: TMenuItem;
     procedure BtOpenClick(Sender: TObject);
     procedure FormCreate(Sender: TObject);
     procedure TrkChChange(Sender: TObject);
@@ -532,6 +534,8 @@ type
     procedure MFormatHERADClick(Sender: TObject);
     procedure MProfileHERADClick(Sender: TObject);
     procedure MDelTracksClick(Sender: TObject);
+    procedure MFormatSOPClick(Sender: TObject);
+    procedure MProfileSOPClick(Sender: TObject);
   private
     { Private declarations }
     procedure OnEventChange(var Msg: TMessage); message WM_EVENTIDX;
@@ -555,6 +559,7 @@ type
     function DetectCMF(var F: TMemoryStream): Boolean;
     function DetectROL(var F: TMemoryStream): Boolean;
     function DetectMUS(var F: TMemoryStream): Boolean;
+    function DetectSOP(var F: TMemoryStream): Boolean;
     function ReadMIDI(var F: TMemoryStream): Boolean;
     function ReadRMI(var F: TMemoryStream): Boolean;
     function ReadMIDS(var F: TMemoryStream): Boolean;
@@ -562,6 +567,7 @@ type
     function ReadCMF(var F: TMemoryStream): Boolean;
     function ReadROL(var F: TMemoryStream; FileName: String): Boolean;
     function ReadMUS(var F: TMemoryStream; FileName: String): Boolean;
+    function ReadSOP(var F: TMemoryStream): Boolean;
     function ReadHERAD(var F: TMemoryStream): Boolean;
     function ReadRaw(var F: TMemoryStream): Boolean;
     function ReadSYX(var F: TMemoryStream): Boolean;
@@ -569,6 +575,7 @@ type
     procedure ReadTrackData_MIDS(var F: TMemoryStream; var Trk: Chunk);
     procedure ReadTrackData_XMI(var F: TMemoryStream; var Trk: Chunk);
     procedure ReadTrackData_MUS(var F: TMemoryStream; var Trk: Chunk);
+    procedure ReadTrackData_SOP(var F: TMemoryStream; var Trk: Chunk);
     procedure ReadTrackData_HERAD(var F: TMemoryStream; var Trk: Chunk);
     procedure ReadTrackData_SYX(var F: TMemoryStream; var Trk: Chunk);
     procedure WriteMIDI(var F: TMemoryStream);
@@ -577,12 +584,14 @@ type
     procedure WriteCMF(var F: TMemoryStream);
     procedure WriteROL(var F: TMemoryStream; FileName: String);
     procedure WriteMUS(var F: TMemoryStream; FileName: String);
+    procedure WriteSOP(var F: TMemoryStream);
     procedure WriteHERAD(var F: TMemoryStream);
     procedure WriteRaw(var F: TMemoryStream);
     procedure WriteSYX(var F: TMemoryStream);
     procedure WriteTrackData(var F: TMemoryStream; var Trk: Chunk);
     procedure WriteTrackData_XMI(var F: TMemoryStream; var Trk: Chunk);
     procedure WriteTrackData_MUS(var F: TMemoryStream; var Trk: Chunk);
+    procedure WriteTrackData_SOP(var F: TMemoryStream; var Trk: Chunk);
     procedure WriteTrackData_HERAD(var F: TMemoryStream; var Trk: Chunk);
     procedure WriteTrackData_SYX(var F: TMemoryStream; var Trk: Chunk);
     procedure ConvertEvents(DestProfile: AnsiString);
@@ -1206,6 +1215,31 @@ begin
   F.Seek(0, soFromBeginning);
   F.ReadBuffer(W, 2);
   Result := W = 1;
+end;
+
+function TMainForm.DetectSOP(var F: TMemoryStream): Boolean;
+var
+  sign: Array[0..7] of Byte;
+  B: Byte;
+begin
+  Result := False;
+  if F.Size < $4C then
+    Exit;
+  F.Seek(0, soFromBeginning);
+  sign[6] := 0;
+  F.ReadBuffer(sign, SizeOf(sign) - 1);
+  if PAnsiChar(@sign[0]) <> 'sopepos' then
+    Exit;
+  F.ReadBuffer(B, 1);
+  if B <> 0 then
+    Exit;
+  F.ReadBuffer(B, 1);
+  if B <> 1 then
+    Exit;
+  F.ReadBuffer(B, 1);
+  if B <> 0 then
+    Exit;
+  Result := True;
 end;
 
 function TMainForm.ReadMIDI(var F: TMemoryStream): Boolean;
@@ -2337,6 +2371,147 @@ begin
           end;
       end;
     end;
+  Result := True;
+  Log.Lines.Add('');
+  Log.Lines.Add('[*] Information:');
+  LogSongInfo;
+  Progress.Position := 0;
+  Log.Lines.Add('');
+  RefTrackList;
+  CalculateEvnts;
+end;
+
+function TMainForm.ReadSOP(var F: TMemoryStream): Boolean;
+var
+  sign: Array[0..7] of AnsiChar;
+  DW: Cardinal;
+  fname: Array[0..12] of AnsiChar;
+  sname: Array[0..30] of AnsiChar;
+  B, nTracks, nInsts: Byte;
+  chanMode: Array of Byte;
+  I, J: Integer;
+  i1name: Array[0..8] of AnsiChar;
+  i2name: Array[0..19] of AnsiChar;
+  op2inst: Array[0..10] of Byte;
+  op4inst: Array[0..21] of Byte;
+  evCount: Word;
+  dwDataSize: DWord;
+  MIDIData: TMemoryStream;
+begin
+  Result := False;
+  Log.Lines.Add('[*] Reading Sopepos'' Note file...');
+  if F.Size < 76 then begin
+    Log.Lines.Add('[-] Error: Wrong file size.');
+    Exit;
+  end;
+
+  F.Seek(0, soFromBeginning);
+  sign[6] := #0;
+  F.ReadBuffer(sign, SizeOf(sign) - 1);
+  if PAnsiChar(@sign[0]) <> 'sopepos' then begin
+    Log.Lines.Add('[-] Error: Wrong header signature.');
+    Exit;
+  end;
+  DW := 0;
+  F.ReadBuffer(DW, 3);
+  if DW <> $100 then begin
+    Log.Lines.Add('[-] Error: Unknown file version.');
+    Exit;
+  end;
+  SongData_PutInt('SOP_Version', DW);
+  F.ReadBuffer(fname, SizeOf(fname));
+  fname[Length(fname) - 1] := #0;
+  F.ReadBuffer(sname, SizeOf(sname));
+  sname[Length(sname) - 1] := #0;
+  SongData_PutStr('SOP_FileName', PAnsiChar(@fname[0]));
+  SongData_PutStr('SOP_SongName', PAnsiChar(@sname[0]));
+  F.ReadBuffer(B, 1);
+  SongData_PutInt('SOP_Percussive', B);
+  F.Seek(1, soCurrent);
+  F.ReadBuffer(B, 1);
+  SongData_PutInt('SOP_TicksPerBeat', B);
+  SongData_PutInt('SMPTE', 0);
+  SongData_PutInt('Division', B);
+  F.Seek(1, soCurrent);
+  F.ReadBuffer(B, 1);
+  SongData_PutInt('SOP_BeatPerMeasure', B);
+  F.ReadBuffer(B, 1);
+  SongData_PutInt('SOP_BasicTempo', B);
+  SongData_PutDWord('InitTempo', 60000000 div B);
+  F.ReadBuffer(fname, SizeOf(fname));
+  fname[Length(fname) - 1] := #0;
+  SongData_PutStr('SOP_Comment', PAnsiChar(@fname[0]));
+  F.ReadBuffer(nTracks, 1);
+  F.ReadBuffer(nInsts, 1);
+  F.Seek(1, soCurrent);
+  // Channel modes
+  SetLength(chanMode, nTracks);
+  F.ReadBuffer(chanMode[0], nTracks);
+  SongData_PutArray('SOP_Channels', chanMode);
+  // Instruments
+  for I := 0 to nInsts - 1 do
+  begin
+    F.ReadBuffer(B, 1);
+    SongData_PutInt('SOP_Inst#' + IntToStr(I), B);
+    i1name[Length(i1name) - 1] := #0;
+    F.ReadBuffer(i1name, SizeOf(i1name) - 1);
+    SongData_PutStr('SOP_SName#' + IntToStr(I), PAnsiChar(@i1name[0]));
+    i2name[Length(i2name) - 1] := #0;
+    F.ReadBuffer(i2name, SizeOf(i2name) - 1);
+    SongData_PutStr('SOP_LName#' + IntToStr(I), PAnsiChar(@i2name[0]));
+    if B = 12 then // comment
+      Continue
+    else if B = 0 then // 4OP instrument
+    begin
+      F.ReadBuffer(op4inst[0], SizeOf(op4inst));
+      SongData_PutArray('SOP_Data#' + IntToStr(I), op4inst);
+    end
+    else if B <= 10 then // 2OP instrument
+    begin
+      F.ReadBuffer(op2inst[0], SizeOf(op2inst));
+      SongData_PutArray('SOP_Data#' + IntToStr(I), op2inst);
+    end;
+  end;
+
+  // Tracks
+  SetLength(TrackData, nTracks + 1);
+  TrackData[0].Title := PAnsiChar(@sname[0]);
+  if TrackData[0].Title = '' then
+    TrackData[0].Title := PAnsiChar(@fname[0]);
+  for I := 0 to nTracks - 1 do
+  begin
+    Log.Lines.Add('[*] Reading track '+IntToStr(I)+'...');
+    F.ReadBuffer(evCount, 2);
+    F.ReadBuffer(dwDataSize, 4);
+    SetLength(TrackData[I].Data, 0);
+    MIDIData := TMemoryStream.Create;
+    MIDIData.SetSize(dwDataSize);
+    F.ReadBuffer(MIDIData.Memory^, dwDataSize);
+    ReadTrackData_SOP(MIDIData, TrackData[I]);
+    for J := 0 to Length(TrackData[I].Data) - 1 do
+      if TrackData[I].Data[J].Status < $F0 then
+        TrackData[I].Data[J].Status := (TrackData[I].Data[J].Status and $F0) or (I mod 16);
+    MIDIData.Free;
+    Log.Lines.Add('[+] '+IntToStr(Length(TrackData[I].Data))+' events found.');
+    if Length(TrackData[I].Data) <> evCount then
+      Log.Lines.Add('[*] Warning: Actual event count differs from stored.');
+  end;
+  // Control track
+  I := Length(TrackData) - 1;
+  Log.Lines.Add('[*] Reading track '+IntToStr(I)+'...');
+  F.ReadBuffer(evCount, 2);
+  F.ReadBuffer(dwDataSize, 4);
+  SetLength(TrackData[I].Data, 0);
+  MIDIData := TMemoryStream.Create;
+  MIDIData.SetSize(dwDataSize);
+  F.ReadBuffer(MIDIData.Memory^, dwDataSize);
+  ReadTrackData_SOP(MIDIData, TrackData[I]);
+  MIDIData.Free;
+  Log.Lines.Add('[+] '+IntToStr(Length(TrackData[I].Data))+' events found.');
+  if Length(TrackData[I].Data) <> evCount then
+    Log.Lines.Add('[*] Warning: Actual event count differs from stored.');
+
+  SongData_PutInt('MIDIType', 1);
   Result := True;
   Log.Lines.Add('');
   Log.Lines.Add('[*] Information:');
@@ -3941,6 +4116,84 @@ begin
   end;
 end;
 
+procedure TMainForm.ReadTrackData_SOP(var F: TMemoryStream; var Trk: Chunk);
+var
+  I: Integer;
+  W: Word;
+  B: Byte;
+begin
+  while F.Position < F.Size do begin
+    SetLength(Trk.Data, Length(Trk.Data) + 1);
+    I := Length(Trk.Data) - 1;
+    F.ReadBuffer(W, 2); // delta ticks
+    Trk.Data[I].Ticks := W;
+    F.ReadBuffer(B, 1); // event code
+    case B of
+      1: // Special Event
+      begin
+        Trk.Data[I].Status := $B0;
+        F.ReadBuffer(B, 1); // value
+        Trk.Data[I].BParm1 := 18;
+        Trk.Data[I].BParm2 := B;
+      end;
+      2: // Play Note
+      begin
+        Trk.Data[I].Status := $90;
+        F.ReadBuffer(B, 1); // note
+        Trk.Data[I].BParm1 := B;
+        Trk.Data[I].BParm2 := 127;
+        F.ReadBuffer(W, 2); // duration
+        Trk.Data[I].Len := W;
+      end;
+      3: // Change Tempo
+      begin
+        Trk.Data[I].Status := $B0;
+        F.ReadBuffer(B, 1); // tempo
+        Trk.Data[I].BParm1 := 17;
+        Trk.Data[I].BParm2 := B;
+      end;
+      4: // Change Volume
+      begin
+        Trk.Data[I].Status := $B0;
+        F.ReadBuffer(B, 1); // volume
+        Trk.Data[I].BParm1 := 7;
+        Trk.Data[I].BParm2 := B;
+      end;
+      5: // Change Pitch
+      begin
+        Trk.Data[I].Status := $B0;
+        F.ReadBuffer(B, 1); // pitch
+        Trk.Data[I].BParm1 := 9;
+        Trk.Data[I].BParm2 := B;
+      end;
+      6: // Program Change
+      begin
+        Trk.Data[I].Status := $C0;
+        F.ReadBuffer(B, 1); // instrument
+        Trk.Data[I].BParm1 := B;
+      end;
+      7: // Set Panning
+      begin
+        Trk.Data[I].Status := $B0;
+        F.ReadBuffer(B, 1); // panning
+        Trk.Data[I].BParm1 := 10;
+        case B of
+          0: Trk.Data[I].BParm2 := 127;
+          1: Trk.Data[I].BParm2 := 64;
+          2: Trk.Data[I].BParm2 := 0;
+        end;
+      end;
+      8: // Global Volume
+      begin
+        Trk.Data[I].Status := $B0;
+        F.ReadBuffer(B, 1); // volume
+        Trk.Data[I].BParm1 := 16;
+        Trk.Data[I].BParm2 := B;
+      end;
+    end;
+  end;
+end;
+
 procedure TMainForm.ReadTrackData_HERAD(var F: TMemoryStream; var Trk: Chunk);
 var
   isM32, isV2: Boolean;
@@ -4935,6 +5188,149 @@ begin
   Progress.Position := 0;
 end;
 
+procedure TMainForm.WriteSOP(var F: TMemoryStream);
+const
+  sign: AnsiString = 'sopepos';
+var
+  ver: DWORD;
+  S: String;
+  fname: Array[0..12] of AnsiChar;
+  sname: Array[0..30] of AnsiChar;
+  B, nInsts: Byte;
+  chanMode: Array of Byte;
+  I: Integer;
+  i1name: Array[0..7] of AnsiChar;
+  i2name: Array[0..18] of AnsiChar;
+  op2inst: Array[0..10] of Byte;
+  op4inst: Array[0..21] of Byte;
+  evCount: Word;
+  dwDataSize: DWord;
+  MIDIData: TMemoryStream;
+begin
+  Log.Lines.Add('[*] Writing Sopepos'' Note file...');
+
+  F.WriteBuffer(sign[1], Length(sign));
+  if not SongData_GetDWord('SOP_Version', ver) then
+    ver := $100;
+  F.WriteBuffer(ver, 3);
+
+  if not SongData_GetStr('SOP_FileName', S) then
+    S := '';
+  if Length(S) > 12 then
+    SetLength(S, 12);
+  FillChar(fname, SizeOf(fname), 0);
+  Move(AnsiString(S)[1], fname[0], Length(S));
+  F.WriteBuffer(fname, SizeOf(fname));
+
+  if not SongData_GetStr('SOP_SongName', S) then
+    S := '';
+  if Length(S) > 30 then
+    SetLength(S, 30);
+  FillChar(sname, SizeOf(sname), 0);
+  Move(AnsiString(S)[1], sname[0], Length(S));
+  F.WriteBuffer(sname, SizeOf(sname));
+
+  if not SongData_GetByte('SOP_Percussive', B) then
+    B := 0;
+  F.WriteBuffer(B, 1);
+  B := 0; // padding
+  F.WriteBuffer(B, 1);
+  if not SongData_GetByte('SOP_TicksPerBeat', B) then
+    B := 12;
+  F.WriteBuffer(B, 1);
+  B := 0; // padding
+  F.WriteBuffer(B, 1);
+  if not SongData_GetByte('SOP_BeatPerMeasure', B) then
+    B := 4;
+  F.WriteBuffer(B, 1);
+  if not SongData_GetByte('SOP_BasicTempo', B) then
+    B := 120;
+  F.WriteBuffer(B, 1);
+
+  if not SongData_GetStr('SOP_Comment', S) then
+    S := '';
+  if Length(S) > 12 then
+    SetLength(S, 12);
+  FillChar(fname[0], Length(fname), 0);
+  Move(AnsiString(S)[1], fname[0], Length(S));
+  F.WriteBuffer(fname, SizeOf(fname));
+
+  if Length(TrackData) = 0 then
+  begin
+    SetLength(TrackData, 1);
+    SetLength(TrackData[0].Data, 0);
+  end;
+  B := Length(TrackData) - 1; // nTracks
+  F.WriteBuffer(B, 1);
+  SetLength(chanMode, B);
+  FillChar(chanMode[0], B, 0);
+  nInsts := 0;
+  while SongData_GetStr('SOP_Inst#' + IntToStr(nInsts), S) do
+    Inc(nInsts);
+  F.WriteBuffer(nInsts, 1);
+  B := 0; // padding
+  F.WriteBuffer(B, 1);
+  // Channel modes
+  SongData_GetArray('SOP_Channels', chanMode);
+  F.WriteBuffer(chanMode[0], Length(chanMode));
+  // Instruments
+  for I := 0 to nInsts - 1 do
+  begin
+    if not SongData_GetByte('SOP_Inst#' + IntToStr(I), B) then
+      B := 1;
+    F.WriteBuffer(B, 1);
+
+    FillChar(i1name, SizeOf(i1name), 0);
+    if not SongData_GetStr('SOP_SName#' + IntToStr(I), S) then
+      S := '';
+    if Length(S) > Length(i1name) then
+      SetLength(S, Length(i1name));
+    Move(AnsiString(S)[1], i1name[0], Length(S));
+    F.WriteBuffer(i1name, SizeOf(i1name));
+
+    FillChar(i2name, SizeOf(i2name), 0);
+    if not SongData_GetStr('SOP_LName#' + IntToStr(I), S) then
+      S := '';
+    if Length(S) > Length(i2name) then
+      SetLength(S, Length(i2name));
+    Move(AnsiString(S)[1], i2name[0], Length(S));
+    F.WriteBuffer(i2name, SizeOf(i2name));
+
+    if B = 12 then // comment
+      Continue
+    else if B = 0 then // 4OP instrument
+    begin
+      FillChar(op4inst[0], SizeOf(op4inst), 0);
+      SongData_GetArray('SOP_Data#' + IntToStr(I), op4inst);
+      F.WriteBuffer(op4inst[0], SizeOf(op4inst));
+    end
+    else if B <= 10 then // 2OP instrument
+    begin
+      FillChar(op2inst[0], SizeOf(op2inst), 0);
+      SongData_GetArray('SOP_Data#' + IntToStr(I), op2inst);
+      F.WriteBuffer(op2inst[0], SizeOf(op2inst));
+    end;
+  end;
+
+  // Tracks
+  for I := 0 to Length(TrackData) - 1 do
+  begin
+    Log.Lines.Add('[*] Writing track '+IntToStr(I)+'...');
+    MIDIData := TMemoryStream.Create;
+    WriteTrackData_SOP(MIDIData, TrackData[I]);
+    evCount := Length(TrackData[I].Data);
+    F.WriteBuffer(evCount, 2);
+    dwDataSize := MIDIData.Size;
+    F.WriteBuffer(dwDataSize, 4);
+    F.WriteBuffer(MIDIData.Memory^, dwDataSize);
+    Log.Lines.Add('[+] Wrote ' + IntToStr(dwDataSize) + ' bytes.');
+    MIDIData.Free;
+  end;
+
+  Progress.Position := 0;
+  F.Seek(0, soFromEnd);
+end;
+
 procedure TMainForm.WriteHERAD(var F: TMemoryStream);
 const
   MaxTracks = 21;
@@ -5307,6 +5703,94 @@ begin
             end;
           end;
         end;
+      end;
+    end;
+  end;
+end;
+
+procedure TMainForm.WriteTrackData_SOP(var F: TMemoryStream; var Trk: Chunk);
+var
+  I: Integer;
+  W: Word;
+  B: Byte;
+begin
+  for I := 0 to Length(Trk.Data) - 1 do
+  begin
+    W := Trk.Data[I].Ticks;
+    F.WriteBuffer(W, 2);
+    case Trk.Data[I].Status shr 4 of
+      $9:
+      begin
+        B := 2; // Play Note
+        F.WriteBuffer(B, 1);
+        F.WriteBuffer(Trk.Data[I].BParm1, 1);
+        W := Trk.Data[I].Len;
+        F.WriteBuffer(W, 2);
+      end;
+      $B:
+      begin
+        case Trk.Data[I].BParm1 of
+          7:
+          begin
+            B := 4; // Change Volume
+            F.WriteBuffer(B, 1);
+            F.WriteBuffer(Trk.Data[I].BParm2, 1);
+          end;
+          9:
+          begin
+            B := 5; // Change Pitch
+            F.WriteBuffer(B, 1);
+            F.WriteBuffer(Trk.Data[I].BParm2, 1);
+          end;
+          10:
+          begin
+            B := 7; // Set Panning
+            F.WriteBuffer(B, 1);
+            case Trk.Data[I].BParm2 of
+              0:   B := 2;
+              64:  B := 1;
+              127: B := 0;
+              else B := 1;
+            end;
+            F.WriteBuffer(B, 1);
+          end;
+          16:
+          begin
+            B := 8; // Global Volume
+            F.WriteBuffer(B, 1);
+            F.WriteBuffer(Trk.Data[I].BParm2, 1);
+          end;
+          17:
+          begin
+            B := 3; // Change Tempo
+            F.WriteBuffer(B, 1);
+            F.WriteBuffer(Trk.Data[I].BParm2, 1);
+          end;
+          18:
+          begin
+            B := 1; // Special Event
+            F.WriteBuffer(B, 1);
+            F.WriteBuffer(Trk.Data[I].BParm2, 1);
+          end;
+          else
+          begin
+            B := 1; // Special Event
+            F.WriteBuffer(B, 1);
+            F.WriteBuffer(Trk.Data[I].BParm2, 1);
+          end;
+        end;
+      end;
+      $C:
+      begin
+        B := 6; // Program Change
+        F.WriteBuffer(B, 1);
+        F.WriteBuffer(Trk.Data[I].BParm1, 1);
+      end;
+      else
+      begin
+        B := 1; // Special Event
+        F.WriteBuffer(B, 1);
+        F.WriteBuffer(Trk.Data[I].BParm1, 1);
       end;
     end;
   end;
@@ -9749,6 +10233,7 @@ begin
   MFormatIMS.Enabled := True;
   MFormatMDI.Enabled := True;
   MFormatCMF.Enabled := True;
+  MFormatSOP.Enabled := True;
   MFormatHERAD.Enabled := True;
   MFormatMID.Checked := False;
   MFormatXMI.Checked := False;
@@ -9757,6 +10242,7 @@ begin
   MFormatIMS.Checked := False;
   MFormatMDI.Checked := False;
   MFormatCMF.Checked := False;
+  MFormatSOP.Checked := False;
   MFormatHERAD.Checked := False;
   MProfileMID.Enabled := True;
   MProfileXMI.Enabled := True;
@@ -9765,6 +10251,7 @@ begin
   MProfileIMS.Enabled := True;
   MProfileMDI.Enabled := True;
   MProfileCMF.Enabled := True;
+  MProfileSOP.Enabled := True;
   MProfileHERAD.Enabled := True;
   MProfileMID.Checked := False;
   MProfileXMI.Checked := False;
@@ -9773,6 +10260,7 @@ begin
   MProfileIMS.Checked := False;
   MProfileMDI.Checked := False;
   MProfileCMF.Checked := False;
+  MProfileSOP.Checked := False;
   MProfileHERAD.Checked := False;
   if EventProfile = 'mid' then begin
     MFormatMID.Checked := True;
@@ -9829,6 +10317,14 @@ begin
   if EventViewProfile = 'cmf' then begin
     MProfileCMF.Checked := True;
     MProfileCMF.Enabled := False;
+  end;
+  if EventProfile = 'sop' then begin
+    MFormatSOP.Checked := True;
+    MFormatSOP.Enabled := False;
+  end;
+  if EventViewProfile = 'sop' then begin
+    MProfileSOP.Checked := True;
+    MProfileSOP.Enabled := False;
   end;
   if EventProfile = 'herad' then begin
     MFormatHERAD.Checked := True;
@@ -10210,7 +10706,8 @@ begin
       EditDialog.VelLabel.Caption:=IntToStr(E^.BParm2);
       EditDialog.PageControl1.TabIndex:=1;
       EditDialog.ChangeHeight(2);
-      if EventProfile = 'xmi' then
+      if (EventProfile = 'xmi')
+      or (EventProfile = 'sop') then
       begin
         EditDialog.Caption:='Event: Play Note';
         EditDialog.ChnChange(Sender);
@@ -10708,6 +11205,7 @@ const
   PROFILE_IMS = 4;
   PROFILE_MDI = 5;
   PROFILE_CMF = 6;
+  PROFILE_SOP = 7;
 label
   play, loop, stop;
 var
@@ -10779,7 +11277,8 @@ var
     dwMsg: DWord;
   begin
     case PlayerProfile of
-      PROFILE_XMI:
+      PROFILE_XMI,
+      PROFILE_SOP:
         for I := 0 to 15 do
         begin // Turn off needed Notes
           J := 0;
@@ -10848,6 +11347,12 @@ var
           E.BParm2 := E.BParm1;
           E.BParm1 := $7;
         end;
+        if E.Status shr 4 = $E then
+        begin // Pitch Bend
+          E.Value := ((E.Value - 8192) div 2) + 8192;
+          E.BParm1 := E.Value and 127;
+          E.BParm2 := (E.Value shr 7) and 127;
+        end;
         if (E.Status = $F0)
         and (E.Len = 5)
         and (E.DataArray[0] = $7F) then
@@ -10895,6 +11400,7 @@ var
          (PlayerProfile = PROFILE_ROL)
       or (PlayerProfile = PROFILE_MUS)
       or (PlayerProfile = PROFILE_IMS)
+      or (PlayerProfile = PROFILE_SOP)
       or (PlayerProfile = PROFILE_CMF)
     )
     and (E.Status = $C9) then
@@ -11028,6 +11534,28 @@ var
             end;
           end;
         end;
+
+        PROFILE_SOP: // Sopepos' Note
+        begin
+          case E.Status shr 4 of
+            11:
+            begin
+              case E.BParm1 of
+                9: // Change Pitch
+                begin
+                  E.Status := $E0 or (E.Status and $F);
+                  E.Value := (E.BParm2 * 8192) div 100;
+                  if E.Value > $3FFF then
+                    E.Value := $3FFF;
+                  E.BParm1 := E.Value and $FF;
+                  E.BParm2 := E.Value shr 8;
+                end;
+                17: // Change Tempo
+                  UpdateTempo(60000000 div E.BParm2);
+              end;
+            end;
+          end;
+        end;
       end;
 
       case E.Status shr 4 of
@@ -11067,7 +11595,8 @@ var
             end;
           end;
 
-          PROFILE_XMI: // Miles XMIDI
+          PROFILE_XMI, // Miles XMIDI
+          PROFILE_SOP: // Sopepos' Note
           begin
             // Store Note to off it when needed
             if (E.Status shr 4 = 9) and (E.BParm2 > 0) then
@@ -11176,6 +11705,8 @@ begin
     PlayerProfile := PROFILE_MDI;
   if EventProfile = 'cmf' then
     PlayerProfile := PROFILE_CMF;
+  if EventProfile = 'sop' then
+    PlayerProfile := PROFILE_SOP;
 
   Rhythm := False;
   if PlayerProfile = PROFILE_ROL then
@@ -11184,6 +11715,9 @@ begin
   if (PlayerProfile = PROFILE_MUS)
   or (PlayerProfile = PROFILE_IMS) then
     if SongData_GetInt('MUS_Percussive', I) then
+      Rhythm := I > 0;
+  if PlayerProfile = PROFILE_SOP then
+    if SongData_GetInt('SOP_Percussive', I) then
       Rhythm := I > 0;
   FillChar(Volumes, Length(Volumes), $FF);
 
@@ -11252,7 +11786,8 @@ begin
 play:
   while MIDIThrId > 0 do
   begin
-    if PlayerProfile = PROFILE_XMI then
+    if (PlayerProfile = PROFILE_XMI)
+    or (PlayerProfile = PROFILE_SOP) then
       PerTickProcess();
     if PlaySet.Mode = PLAY_STEP then
     begin // Play events step by step on button click
@@ -11813,6 +12348,11 @@ begin
       EventFormat := 'mus';
       EventProfile := 'ims';
     end;
+    if (Ext = '.sop') then begin
+      Container := 'sop';
+      EventFormat := 'sop';
+      EventProfile := 'sop';
+    end;
     if (Ext = '.sdb')
     or (Ext = '.agd')
     or (Ext = '.m32') then begin
@@ -11877,6 +12417,11 @@ begin
       EventFormat := 'mus';
       EventProfile := 'ims';
     end;
+    if Fmt = 'sop' then begin
+      Container := 'sop';
+      EventFormat := 'sop';
+      EventProfile := 'sop';
+    end;
     if Fmt = 'herad' then begin
       Container := 'herad';
       EventFormat := 'herad';
@@ -11936,6 +12481,9 @@ begin
     end;
     if Container = 'ims' then begin
       Opened := ReadMUS(M, FileName);
+    end;
+    if Container = 'sop' then begin
+      Opened := ReadSOP(M);
     end;
     if Container = 'herad' then begin
       Opened := ReadHERAD(M);
@@ -12022,6 +12570,12 @@ begin
     TargetEventFormat := 'mid';
     TargetEventProfile := 'cmf';
   end;
+  if (Ext = '.sop')
+  then begin
+    TargetContainer := 'sop';
+    TargetEventFormat := 'sop';
+    TargetEventProfile := 'sop';
+  end;
   if (Ext = '.sdb')
   or (Ext = '.agd')
   or (Ext = '.m32')
@@ -12094,6 +12648,14 @@ begin
     if TargetEventProfile = 'ims' then
       ConvertEvents('ims');
     WriteMUS(M, FileName);
+    Result := True;
+  end;
+  if TargetContainer = 'sop' then begin
+    if TargetEventFormat = 'sop' then
+      EventFormat := 'sop';
+    if TargetEventProfile = 'sop' then
+      ConvertEvents('sop');
+    WriteSOP(M);
     Result := True;
   end;
   if TargetContainer = 'herad' then begin
@@ -12190,6 +12752,13 @@ begin
     Result := 'mus';
     EventFormat := 'mus';
     EventProfile := 'mus';
+    Exit;
+  end;
+  if DetectSOP(F) then
+  begin
+    Result := 'sop';
+    EventFormat := 'sop';
+    EventProfile := 'sop';
     Exit;
   end;
 end;
@@ -12862,6 +13431,19 @@ begin
   ChkButtons;
 end;
 
+procedure TMainForm.MFormatSOPClick(Sender: TObject);
+var
+  Idx: Integer;
+begin
+  Idx := TrkCh.ItemIndex;
+  ConvertEvents('sop');
+  RefTrackList;
+  TrkCh.ItemIndex := Idx;
+  FillEvents(TrkCh.ItemIndex);
+  CalculateEvnts;
+  ChkButtons;
+end;
+
 procedure TMainForm.MFormatHERADClick(Sender: TObject);
 var
   Idx: Integer;
@@ -12922,6 +13504,9 @@ begin
   if (EventViewProfile = 'mus')
   or (EventViewProfile = 'ims') then
     if SongData_GetInt('MUS_Percussive', I) then
+      Rhythm := I > 0;
+  if EventViewProfile = 'sop' then
+    if SongData_GetInt('SOP_Percussive', I) then
       Rhythm := I > 0;
 
   // Pre-process events to get current state
@@ -13454,6 +14039,89 @@ begin
               if TrackData[Idx].Data[I].DataArray[5] = 1 then
                 Rhythm := True;
             end;
+        end;
+      end;
+    end;
+
+    if EventViewProfile = 'sop' then begin
+      case TrackData[Idx].Data[I].Status shr 4 of
+        9: // Note On
+        begin
+          Events.Cells[3,I+1] := 'Play Note';
+          Events.Cells[4,I+1] := 'Note = '+IntToStr(TrackData[Idx].Data[I].BParm1)+
+          ' ('+NoteNum(TrackData[Idx].Data[I].BParm1)+')';
+          S := '';
+          if Rhythm then
+            case TrackData[Idx].Data[I].Status and 15 of
+              6: S := 'Bass drum';
+              7: S := 'Snare drum';
+              8: S := 'Tom tom';
+              9: S := 'Top cymbal';
+              10: S := 'Hi-hat cymbal';
+            end;
+          if S <> '' then
+            Events.Cells[4,I+1] := Events.Cells[4,I+1] + ' (' + S + ')';
+          Events.Cells[4,I+1] := Events.Cells[4,I+1] +
+          ', duration = ' + IntToStr(TrackData[Idx].Data[I].Len);
+        end;
+        11: // Control Change
+        begin
+          case TrackData[Idx].Data[I].BParm1 of
+            7: // Volume Change
+            begin
+              Events.Cells[3,I+1] := 'Volume Change';
+              Events.Cells[4,I+1] := 'Value = ' + IntToStr(TrackData[Idx].Data[I].BParm2);
+            end;
+            9: // Pitch Change
+            begin
+              Events.Cells[3,I+1] := 'Pitch Change';
+              Events.Cells[4,I+1] := IntToStr(TrackData[Idx].Data[I].BParm2 - 100) + '%';
+              if TrackData[Idx].Data[I].BParm2 <= 100 then
+                Events.Cells[4,I+1] := 'Value = ' + Events.Cells[4,I+1]
+              else
+                Events.Cells[4,I+1] := 'Value = +' + Events.Cells[4,I+1];
+            end;
+            10: // Set Panning
+            begin
+              Events.Cells[3,I+1] := 'Set Panning';
+              case TrackData[Idx].Data[I].BParm2 of
+                0:
+                  Events.Cells[4,I+1] := 'Left';
+                64:
+                  Events.Cells[4,I+1] := 'Middle';
+                127:
+                  Events.Cells[4,I+1] := 'Right';
+                else
+                  Events.Cells[4,I+1] := 'Value = ' + IntToStr(TrackData[Idx].Data[I].BParm2);
+              end;
+            end;
+            16: // Global Volume
+            begin
+              Events.Cells[3,I+1] := 'Global Volume';
+              Events.Cells[4,I+1] := 'Value = ' + IntToStr(TrackData[Idx].Data[I].BParm2);
+            end;
+            17: // Change Tempo
+            begin
+              Events.Cells[3,I+1] := 'Change Tempo';
+              Events.Cells[4,I+1] := 'Value = ' + IntToStr(TrackData[Idx].Data[I].BParm2);
+            end;
+            18: // Special Event
+            begin
+              Events.Cells[3,I+1] := 'Special Event';
+              Events.Cells[4,I+1] := 'Value = ' + IntToStr(TrackData[Idx].Data[I].BParm2);
+            end;
+          end;
+        end;
+        12: // Program Change
+        begin
+          Events.Cells[4,I+1] :=
+          'Instrument = ' + IntToStr(TrackData[Idx].Data[I].BParm1);
+          S := '';
+          SongData_GetStr('SOP_LName#'+IntToStr(TrackData[Idx].Data[I].BParm1), S);
+          if S = '' then
+            SongData_GetStr('SOP_SName#'+IntToStr(TrackData[Idx].Data[I].BParm1), S);
+          if S <> '' then
+            Events.Cells[4,I+1] := Events.Cells[4,I+1] + ' (' + S + ')';
         end;
       end;
     end;
@@ -14516,6 +15184,14 @@ end;
 procedure TMainForm.MProfileIMSClick(Sender: TObject);
 begin
   EventViewProfile := 'ims';
+  FillEvents(TrkCh.ItemIndex);
+  CalculateEvnts;
+  ChkButtons;
+end;
+
+procedure TMainForm.MProfileSOPClick(Sender: TObject);
+begin
+  EventViewProfile := 'sop';
   FillEvents(TrkCh.ItemIndex);
   CalculateEvnts;
   ChkButtons;
