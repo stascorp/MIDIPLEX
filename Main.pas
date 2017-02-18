@@ -611,6 +611,7 @@ type
     procedure Convert_MDI_ROL;
     procedure Convert_IMS_MID;
     procedure Convert_IMS_ROL;
+    procedure Convert_SOP_MID;
     procedure Convert_HERAD_MID;
     procedure ConvertTicks(RelToAbs: Boolean; var Data: Array of Command);
     function MergeTracksUsingTicks(Tracks: Array of Integer; EOT: Boolean): Chunk;
@@ -9795,6 +9796,240 @@ begin
   Log.Lines.Add('[+] Done.');
 end;
 
+procedure TMainForm.Convert_SOP_MID;
+type
+  NoteDur = packed record
+    Chn: Byte;
+    Note: Byte;
+    Ticks: UInt64;
+  end;
+  PNoteDur = ^NoteDur;
+var
+  Division, BT: Byte;
+  Rhythm: Boolean;
+  I,J,K: Integer;
+  Durations: TList;
+  PDur: PNoteDur;
+  MinDur: UInt64;
+  MinDurFirst: Boolean;
+  S: String;
+begin
+  Log.Lines.Add('[*] Converting Sopepos'' Note to Standard MIDI...');
+  Application.ProcessMessages;
+  if not SongData_GetByte('SOP_TicksPerBeat', Division) then
+    Division := 12;
+  if not SongData_GetInt('SOP_Percussive', I) then
+    I := 0;
+  Rhythm := I = 1;
+  if not SongData_GetByte('SOP_BasicTempo', BT) then
+    BT := 120;
+  for I := 0 to Length(TrackData)-1 do
+  begin
+    // Convert note events to Note On/Off
+    J := 0;
+    Durations := TList.Create;
+    while J < Length(TrackData[I].Data) do
+    begin
+      while TrackData[I].Data[J].Ticks > 0 do
+      begin
+        // Find notes with minimum duration
+        // which can be turned off now
+        MinDur := High(UInt64);
+        for K := 0 to Durations.Count - 1 do
+        begin
+          PDur := Durations[K];
+          if (PDur^.Ticks <= TrackData[I].Data[J].Ticks)
+          and (PDur^.Ticks < MinDur) then
+            MinDur := PDur^.Ticks;
+        end;
+        if MinDur < High(UInt64) then
+        begin
+          // Found notes which needs to off
+          K := 0;
+          MinDurFirst := True;
+          while K < Durations.Count do
+          begin
+            PDur := Durations[K];
+            if PDur^.Ticks = MinDur then
+            begin
+              // Adding NoteOff event
+              NewEvent(I, J, $80, 0);
+              TrackData[I].Data[J].Status := $80 or (PDur^.Chn and $F);
+              TrackData[I].Data[J].BParm1 := PDur^.Note;
+              if MinDurFirst then
+                TrackData[I].Data[J].Ticks := PDur^.Ticks
+              else
+                TrackData[I].Data[J].Ticks := 0;
+              if Rhythm then
+                ROL_MIDIDrum(TrackData[I].Data[J]);
+              Inc(J);
+              MinDurFirst := False;
+              Dispose(PDur);
+              Durations.Delete(K);
+              Continue;
+            end;
+            // Decreasing duration
+            PDur^.Ticks := PDur^.Ticks - MinDur;
+            Inc(K);
+          end;
+          TrackData[I].Data[J].Ticks := TrackData[I].Data[J].Ticks - MinDur;
+        end
+        else
+        begin
+          for K := 0 to Durations.Count - 1 do
+          begin
+            // Decrease all durations by ticks
+            PDur := Durations[K];
+            PDur^.Ticks := PDur^.Ticks - TrackData[I].Data[J].Ticks;
+          end;
+          Break;
+        end;
+      end;
+
+      case TrackData[I].Data[J].Status shr 4 of
+        8: begin // Note Off - unused
+          DelEvent(I, J, True);
+          Continue;
+        end;
+        9: begin // SOP Note
+          // Read note duration
+          if TrackData[I].Data[J].Len = 0 then
+          begin
+            // Adding NoteOff event
+            NewEvent(I, J+1, $80, 0);
+            TrackData[I].Data[J+1].Status := $80 or (TrackData[I].Data[J].Status and $F);
+            TrackData[I].Data[J+1].BParm1 := TrackData[I].Data[J].BParm1;
+            if Rhythm then
+              ROL_MIDIDrum(TrackData[I].Data[J]);
+            Inc(J);
+          end
+          else
+          begin
+            PDur := New(PNoteDur);
+            PDur^.Chn := TrackData[I].Data[J].Status and $F;
+            PDur^.Note := TrackData[I].Data[J].BParm1;
+            PDur^.Ticks := TrackData[I].Data[J].Len;
+            Durations.Add(PDur);
+            TrackData[I].Data[J].Len := 0;
+            if Rhythm then
+              ROL_MIDIDrum(TrackData[I].Data[J]);
+          end;
+        end;
+        11: begin
+          case TrackData[I].Data[J].BParm1 of
+            9: // Change Pitch
+            begin
+              TrackData[I].Data[J].Status := $E0 or (TrackData[I].Data[J].Status and $F);
+              TrackData[I].Data[J].Value := (TrackData[I].Data[J].BParm2 * 8192) div 100;
+              if TrackData[I].Data[J].Value > $3FFF then
+                TrackData[I].Data[J].Value := $3FFF;
+              TrackData[I].Data[J].BParm1 := TrackData[I].Data[J].Value and $FF;
+              TrackData[I].Data[J].BParm2 := TrackData[I].Data[J].Value shr 8;
+            end;
+            17: // Change Tempo
+            begin
+              TrackData[I].Data[J].Status := $FF;
+              TrackData[I].Data[J].BParm1 := $51;
+
+              TrackData[I].Data[J].Value := 60000000 div TrackData[I].Data[J].BParm2;
+              TrackData[I].Data[J].BParm2 := 0;
+
+              SetLength(TrackData[I].Data[J].DataArray, 3);
+              TrackData[I].Data[J].Len := 3;
+
+              TrackData[I].Data[J].DataArray[0] := (TrackData[I].Data[J].Value shr 16) and $FF;
+              TrackData[I].Data[J].DataArray[1] := (TrackData[I].Data[J].Value shr 8) and $FF;
+              TrackData[I].Data[J].DataArray[2] := (TrackData[I].Data[J].Value) and $FF;
+            end;
+          end;
+        end;
+      end;
+      if (Durations.Count > 0)
+      and (J = High(TrackData[I].Data))
+      and (TrackData[I].Data[J].Status = $FF)
+      and (TrackData[I].Data[J].BParm1 = $2F) then
+      begin
+        TrackData[I].Data[J].Ticks := 0;
+        for K := 0 to Durations.Count - 1 do
+        begin
+          PDur := Durations[K];
+          if TrackData[I].Data[J].Ticks < PDur^.Ticks then
+            TrackData[I].Data[J].Ticks := PDur^.Ticks;
+        end;
+        Continue;
+      end;
+      Inc(J);
+    end;
+    for J := 0 to Durations.Count - 1 do
+    begin
+      PDur := Durations[J];
+      K := Length(TrackData[I].Data);
+      SetLength(TrackData[I].Data, Length(TrackData[I].Data) + 1);
+      TrackData[I].Data[K].Ticks := PDur.Ticks;
+      TrackData[I].Data[K].Status := $80 or PDur.Chn;
+      TrackData[I].Data[K].BParm1 := PDur.Note;
+      TrackData[I].Data[K].BParm2 := 0;
+      if Rhythm then
+        ROL_MIDIDrum(TrackData[I].Data[K]);
+      Dispose(PDur);
+    end;
+    Durations.Free;
+    K := High(TrackData[I].Data);
+    if K >= 0 then
+    begin
+      if (TrackData[I].Data[K].Status <> $FF)
+      or (TrackData[I].Data[K].BParm1 <> $2F) then
+        NewEvent(I, K+1, $FF, $2F);
+    end else
+      NewEvent(I, 0, $FF, $2F);
+    Log.Lines.Add('[+] Track #'+IntToStr(I)+': '+IntToStr(Length(TrackData[I].Data))+' events converted.');
+  end;
+
+  // Move last track to first place
+  SetLength(TrackData, Length(TrackData) + 1);
+  for I := Length(TrackData) - 2 downto 0 do
+    TrackData[I + 1].Data := TrackData[I].Data;
+  TrackData[0].Data := TrackData[Length(TrackData) - 1].Data;
+  SetLength(TrackData, Length(TrackData) - 1);
+
+  if 60000000 div BT <> MIDIStdTempo then
+  begin
+    // Basic tempo
+    NewEvent(0, 0, $FF, $51);
+    TrackData[0].Data[0].Value := 60000000 div BT;
+
+    SetLength(TrackData[0].Data[J].DataArray, 3);
+    TrackData[0].Data[J].Len := 3;
+
+    TrackData[0].Data[J].DataArray[0] := (TrackData[0].Data[J].Value shr 16) and $FF;
+    TrackData[0].Data[J].DataArray[1] := (TrackData[0].Data[J].Value shr 8) and $FF;
+    TrackData[0].Data[J].DataArray[2] := (TrackData[0].Data[J].Value) and $FF;
+  end;
+  // Insert file name as comment
+  if SongData_GetStr('SOP_FileName', S) then
+    if S <> '' then
+    begin
+      NewEvent(0, 0, $FF, 1);
+      TrackData[0].Data[0].DataString := AnsiString(S);
+    end;
+  // Insert song name
+  if SongData_GetStr('SOP_SongName', S) then
+    if S <> '' then
+    begin
+      NewEvent(0, 0, $FF, 3);
+      TrackData[0].Data[0].DataString := AnsiString(S);
+    end;
+
+  SongData.Strings.Clear;
+
+  SongData_PutInt('MIDIType', 1);
+  SongData_PutInt('InitTempo', MIDIStdTempo);
+  SongData_PutInt('Division', Division);
+  SongData_PutInt('SMPTE', 0);
+
+  Log.Lines.Add('[+] Done.');
+end;
+
 procedure TMainForm.Convert_HERAD_MID;
 begin
   Log.Lines.Add('[*] Converting Cryo HERAD to Standard MIDI...');
@@ -14789,6 +15024,13 @@ begin
       Convert_IMS_ROL;
       EventProfile := 'rol';
       EventViewProfile := 'rol';
+    end;
+  end;
+  if EventProfile = 'sop' then begin
+    if DestProfile = 'mid' then begin
+      Convert_SOP_MID;
+      EventProfile := 'mid';
+      EventViewProfile := 'mid';
     end;
   end;
   if EventProfile = 'herad' then begin
