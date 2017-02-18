@@ -11023,10 +11023,19 @@ begin
           end;
           else begin
             EditDialog.Caption:='Event: '+ControlTable[E^.BParm1];
+            EditDialog.CtrlValue.MinValue:=0;
             EditDialog.CtrlValue.MaxValue:=127;
             EditDialog.CtrlValue.Value:=E^.BParm2;
             EditDialog.PageControl1.TabIndex:=9;
             EditDialog.ChangeHeight(1);
+            if EventProfile = 'sop' then
+            begin
+              if E^.BParm1 = 17 then // Change Tempo
+              begin
+                EditDialog.CtrlValue.MaxValue := 255;
+                EditDialog.CtrlValue.Value := E^.BParm2;
+              end;
+            end;
           end;
         end
       else begin
@@ -11037,8 +11046,21 @@ begin
         EditDialog.CVal.MaxValue:=127;
         EditDialog.Control.Value:=E^.BParm1;
         EditDialog.CVal.Value:=E^.BParm2;
+        EditDialog.CtrlValue.MinValue := 0;
+        EditDialog.CtrlValue.MaxValue := 127;
         EditDialog.PageControl1.TabIndex:=7;
         EditDialog.ChangeHeight(1);
+        if EventProfile = 'sop' then
+        begin
+          if E^.BParm1 = 9 then // Change Pitch
+          begin
+            EditDialog.CtrlValue.MinValue := -100;
+            EditDialog.CtrlValue.MaxValue := 100;
+            EditDialog.CtrlValue.Value := E^.BParm2 - 100;
+          end else
+            EditDialog.CtrlValue.Value := E^.BParm2;
+          EditDialog.PageControl1.TabIndex := 9;
+        end;
       end;
     12: begin
       EditDialog.Caption:='Event: Program Change';
@@ -11089,6 +11111,7 @@ begin
         end;
         2: begin
           EditDialog.Caption:='Event: '+SystemTable[E^.Status and 15];
+          EditDialog.CtrlValue.MinValue:=0;
           EditDialog.CtrlValue.MaxValue:=16383;
           EditDialog.CtrlValue.Value:=E^.Value;
           EditDialog.PageControl1.TabIndex:=9;
@@ -11096,6 +11119,7 @@ begin
         end;
         3: begin
           EditDialog.Caption:='Event: '+SystemTable[E^.Status and 15];
+          EditDialog.CtrlValue.MinValue:=0;
           EditDialog.CtrlValue.MaxValue:=127;
           EditDialog.CtrlValue.Value:=E^.BParm1;
           EditDialog.PageControl1.TabIndex:=9;
@@ -11110,6 +11134,7 @@ begin
         case E^.BParm1 of
           0: begin
             EditDialog.Caption:='Event: '+MetaTable[E^.BParm1];
+            EditDialog.CtrlValue.MinValue:=0;
             EditDialog.CtrlValue.MaxValue:=65535;
             EditDialog.CtrlValue.Value:=E^.Value;
             EditDialog.PageControl1.TabIndex:=9;
@@ -11131,6 +11156,7 @@ begin
           end;
           33: begin
             EditDialog.Caption:='Event: '+MetaTable[E^.BParm1];
+            EditDialog.CtrlValue.MinValue:=0;
             EditDialog.CtrlValue.MaxValue:=255;
             EditDialog.CtrlValue.Value:=E^.Value;
             EditDialog.PageControl1.TabIndex:=9;
@@ -11143,6 +11169,7 @@ begin
           end;
           81: begin
             EditDialog.Caption:='Event: '+MetaTable[E^.BParm1];
+            EditDialog.CtrlValue.MinValue:=0;
             EditDialog.CtrlValue.MaxValue:=16777215;
             EditDialog.CtrlValue.Value:=E^.Value;
             EditDialog.PageControl1.TabIndex:=9;
@@ -11239,6 +11266,11 @@ begin
       else begin
         E^.BParm1:=EditDialog.Control.Value;
         E^.BParm2:=EditDialog.CVal.Value;
+        if EventProfile = 'sop' then
+        begin
+          if E^.BParm1 = 9 then // Change Pitch
+            E^.BParm2 := EditDialog.CtrlValue.Value + 100;
+        end;
       end;
     12:
       E^.BParm1:=EditDialog.CProgram.ItemIndex;
@@ -14338,7 +14370,7 @@ begin
             17: // Change Tempo
             begin
               Events.Cells[3,I+1] := 'Change Tempo';
-              Events.Cells[4,I+1] := 'Value = ' + IntToStr(TrackData[Idx].Data[I].BParm2);
+              Events.Cells[4,I+1] := 'Value = ' + IntToStr(TrackData[Idx].Data[I].BParm2) + ' BPM';
             end;
             18: // Special Event
             begin
