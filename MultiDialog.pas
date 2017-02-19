@@ -220,6 +220,9 @@ implementation
 
 {$R *.dfm}
 
+uses
+  Main;
+
 procedure TEditDialog.KEscExecute(Sender: TObject);
 begin
   bCancel.Click;
@@ -305,12 +308,8 @@ var
 begin
   V1:=CProgram.ItemIndex;
   CProgram.Items.Clear;
-  if Chn.ItemIndex<>9 then
-    for I:=0 to 127 do
-      CProgram.Items.Add(IntToStr(I)+': '+InstrumentTable[I])
-  else
-    for I:=0 to 127 do
-      CProgram.Items.Add(IntToStr(I)+': '+DrumKits[I]);
+  for I := 0 to 127 do
+    CProgram.Items.Add(IntToStr(I) + ': ' + MainForm.GetInstName(I, Chn.ItemIndex));
   CProgram.ItemIndex:=V1;
   V1:=Note.ItemIndex;
   V2:=ANote.ItemIndex;
@@ -808,12 +807,8 @@ begin
       seVal1.Visible := True;
     end;
     3: begin
-      if Chn.ItemIndex<>9 then
-        for I:=0 to 127 do
-          EVal1.Items.Add(IntToStr(I)+': '+InstrumentTable[I])
-      else
-        for I:=0 to 127 do
-          EVal1.Items.Add(IntToStr(I)+': '+DrumKits[I]);
+      for I := 0 to 127 do
+        EVal1.Items.Add(IntToStr(I) + ': ' + MainForm.GetInstName(I, Chn.ItemIndex));
       EVal1.ItemIndex:=0;
       EVal1Op.Enabled:=True;
     end;

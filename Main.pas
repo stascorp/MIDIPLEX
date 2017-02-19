@@ -620,6 +620,8 @@ type
     procedure CalculateEvnts;
     procedure RefTrackList;
     procedure ChkButtons;
+    function GetInstType(Chn: Byte): String;
+    function GetInstName(Prog: Byte; Chn: Byte): String;
     procedure FillEvents(Idx: Integer);
     procedure LogSongInfo;
     procedure AddTrack;
@@ -13724,13 +13726,61 @@ begin
   ChkButtons;
 end;
 
+function TMainForm.GetInstType(Chn: Byte): String;
+begin
+  if Chn = 9 then
+    Result := 'Drum Kit'
+  else
+    Result := 'Instrument';
+  if (EventViewProfile = 'mus')
+  or (EventViewProfile = 'ims')
+  or (EventViewProfile = 'mdi')
+  or (EventViewProfile = 'sop')
+  or (EventViewProfile = 'cmf') then
+    Result := 'Instrument';
+  if (EventViewProfile = 'herad') then
+    if SongData_GetStr('HERAD_Inst#0', Result) then // is not M32
+      Result := 'Instrument';
+end;
+
+function TMainForm.GetInstName(Prog: Byte; Chn: Byte): String;
+begin
+  if Chn = 9 then
+    Result := DrumKits[Prog]
+  else
+    Result := InstrumentTable[Prog];
+  if EventViewProfile = 'mus' then
+  begin
+    Result := '';
+    SongData_GetStr('SND_Name#' + IntToStr(Prog), Result);
+  end;
+  if EventViewProfile = 'ims' then
+  begin
+    Result := '';
+    SongData_GetStr('IMS_Name#' + IntToStr(Prog), Result);
+  end;
+  if (EventViewProfile = 'mdi')
+  or (EventViewProfile = 'cmf') then
+    Result := '';
+  if EventViewProfile = 'sop' then
+  begin
+    Result := '';
+    SongData_GetStr('SOP_LName#' + IntToStr(Prog), Result);
+    if Result = '' then
+      SongData_GetStr('SOP_SName#' + IntToStr(Prog), Result);
+  end;
+  if EventViewProfile = 'herad' then
+    if SongData_GetStr('HERAD_Inst#0', Result) then
+      Result := '';
+end;
+
 procedure TMainForm.FillEvents(Idx: Integer);
 var
   I, J, Cnt: Integer;
   S: String;
   Speed: Double;
   Fl: Single;
-  Rhythm, Bl, HERAD_M32, HERAD_V2: Boolean;
+  Rhythm, HERAD_V2: Boolean;
   InitTempo: Cardinal;
 begin
   if (Idx < 0) or (Idx >= Length(TrackData)) then
@@ -13912,13 +13962,13 @@ begin
         end;
       end;
       12: begin // Program Change
-        Events.Cells[3,I+1]:='Program Change';
-        if (TrackData[Idx].Data[I].Status and 15)<>9 then
-          Events.Cells[4,I+1]:='Instrument = '+IntToStr(TrackData[Idx].Data[I].BParm1) +
-          ' ('+InstrumentTable[TrackData[Idx].Data[I].BParm1]+')'
-        else
-          Events.Cells[4,I+1]:='Drum Kit = '+IntToStr(TrackData[Idx].Data[I].BParm1) +
-          ' ('+DrumKits[TrackData[Idx].Data[I].BParm1]+')';
+        Events.Cells[3,I+1] := 'Program Change';
+        Events.Cells[4,I+1] := GetInstType(TrackData[Idx].Data[I].Status and 15);
+        Events.Cells[4,I+1] :=
+        Events.Cells[4,I+1] + ' = ' + IntToStr(TrackData[Idx].Data[I].BParm1);
+        S := GetInstName(TrackData[Idx].Data[I].BParm1, TrackData[Idx].Data[I].Status and 15);
+        if S <> '' then
+          Events.Cells[4,I+1] := Events.Cells[4,I+1] + ' (' + S + ')';
       end;
       13: begin // Channel Aftertouch
         Events.Cells[3,I+1]:='Channel Aftertouch';
@@ -14207,18 +14257,6 @@ begin
           Events.Cells[4,I+1] :=
           'Value = '+IntToStr(TrackData[Idx].Data[I].BParm1);
         end;
-        12: begin // Program Change
-          Events.Cells[4,I+1] :=
-          'Instrument = ' + IntToStr(TrackData[Idx].Data[I].BParm1);
-          S := '';
-          Bl := False;
-          if (EventViewProfile = 'mus') then
-            Bl := SongData_GetStr('SND_Name#'+IntToStr(TrackData[Idx].Data[I].BParm1), S);
-          if (EventViewProfile = 'ims') then
-            Bl := SongData_GetStr('IMS_Name#'+IntToStr(TrackData[Idx].Data[I].BParm1), S);
-          if Bl then
-            Events.Cells[4,I+1] := Events.Cells[4,I+1] + ' (' + S + ')';
-        end;
         15: // System
         begin
           if (TrackData[Idx].Data[I].Status = $F0)
@@ -14277,10 +14315,6 @@ begin
             end;
           if S <> '' then
             Events.Cells[4,I+1] := Events.Cells[4,I+1] + ' (' + S + ')';
-        end;
-        12: begin // Program Change
-          Events.Cells[4,I+1] :=
-          'Instrument = ' + IntToStr(TrackData[Idx].Data[I].BParm1);
         end;
         13: begin // Volume Change
           Events.Cells[3,I+1] := 'Volume Change';
@@ -14379,17 +14413,6 @@ begin
             end;
           end;
         end;
-        12: // Program Change
-        begin
-          Events.Cells[4,I+1] :=
-          'Instrument = ' + IntToStr(TrackData[Idx].Data[I].BParm1);
-          S := '';
-          SongData_GetStr('SOP_LName#'+IntToStr(TrackData[Idx].Data[I].BParm1), S);
-          if S = '' then
-            SongData_GetStr('SOP_SName#'+IntToStr(TrackData[Idx].Data[I].BParm1), S);
-          if S <> '' then
-            Events.Cells[4,I+1] := Events.Cells[4,I+1] + ' (' + S + ')';
-        end;
       end;
     end;
 
@@ -14465,15 +14488,10 @@ begin
             end;
           end;
         end;
-        12: begin // Program Change
-          Events.Cells[4,I+1] :=
-          'Instrument = ' + IntToStr(TrackData[Idx].Data[I].BParm1);
-        end;
       end;
     end;
 
     if EventViewProfile = 'herad' then begin
-      HERAD_M32 := not SongData_GetStr('HERAD_Inst#0', S);
       if not SongData_GetInt('HERAD_V2', J) then
         J := 0;
       HERAD_V2 := J > 0;
@@ -14483,11 +14501,6 @@ begin
             Events.Cells[4,I+1] :=
             'Note = ' + IntToStr(TrackData[Idx].Data[I].BParm1) +
             ' (' + NoteNum(TrackData[Idx].Data[I].BParm1) + ')';
-        end;
-        12: begin // Program Change
-          if not HERAD_M32 then
-            Events.Cells[4,I+1] :=
-            'Instrument = ' + IntToStr(TrackData[Idx].Data[I].BParm1);
         end;
       end;
     end;
