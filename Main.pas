@@ -1126,7 +1126,7 @@ begin
   S := 'MIDIPLEX Sequencer ';
   S := S + Format('v%d.%d.%d', [FV.Version.w.Major, FV.Version.w.Minor, FV.Release]);
   S := S + #13#10#13#10 +
-  'Copyright (C) Stas''M Corp. 2012-2016' + #13#10;
+  'Copyright (C) Stas''M Corp. 2012-2017' + #13#10;
   S := S + #13#10 +
   'Project development was started in Apr 2012 by Stas''M.'#13#10 +
   'The main goal is to provide exclusive editing features that ' +
@@ -13240,7 +13240,7 @@ begin
       GetMyVersion(FV);
       S := 'MIDIPLEX Sequencer ' +
         Format('v%d.%d.%d', [FV.Version.w.Major, FV.Version.w.Minor, FV.Release]) + #13#10;
-      S := S + 'Copyright (C) Stas''M Corp. 2012-2016'#13#10;
+      S := S + 'Copyright (C) Stas''M Corp. 2012-2017'#13#10;
       S := S + #13#10;
       if ParamStr(1) = '-h' then
       begin

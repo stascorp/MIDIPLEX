@@ -1,5 +1,5 @@
 # MIDIPLEX
-Copyright (C) Stas'M Corp. 2012-2016
+Copyright (C) Stas'M Corp. 2012-2017
 
 MIDIPLEX is an open source MIDI event editor written in Delphi 2010 for advanced users. It supports many MIDI-based file formats, different synthesizer types, technical specifications of SysEx commands, and conversion between different formats or file containers.
 
