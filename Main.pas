@@ -2147,7 +2147,7 @@ var
   InstCnt, InstOff: Word;
   I: Integer;
   Name: Array[0..8] of AnsiChar;
-  Inst: Array[0..13+13+2] of Word;
+  Inst: Array[0..13+13+2-1] of Word;
 begin
   Result := False;
   M := TMemoryStream.Create;
