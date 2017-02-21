@@ -11970,6 +11970,7 @@ var
           E.BParm1 := $7;
         end;
         if (E.Status = $FF)
+        and (E.BParm1 = $7F)
         and (E.Len = 6)
         and (E.DataArray[0] = $00)
         and (E.DataArray[1] = $00)
