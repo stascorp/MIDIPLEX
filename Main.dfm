@@ -712,9 +712,9 @@ object MainForm: TMainForm
       'orc|MIDI Stream (*.mds;*.mids)|*.mds;*.mids|Miles Extended MIDI ' +
       '(*.xmi)|*.xmi|Creative Music File (*.cmf)|*.cmf|AdLib ROL (*.rol' +
       ')|*.rol|AdLib MUS (*.mus)|*.mus|AdLib IMS (*.ims)|*.ims|AdLib MD' +
-      'I (*.mdi)|*.mdi|Sopepos'#39' Note (*.sop)|*.sop|Cryo HERAD (*.sdb;*.' +
-      'agd;*.m32)|*.sdb;*.agd;*.m32|Raw MIDI data (Standard)|*.raw|Syst' +
-      'em Exclusive data|*.syx'
+      'I (*.mdi)|*.mdi|Sopepos'#39' Note (*.sop)|*.sop|Cryo HERAD (*.hsq;*.' +
+      'sqx;*.sdb;*.agd;*.m32)|*.hsq;*.sqx;*.sdb;*.agd;*.m32|Raw MIDI da' +
+      'ta (Standard)|*.raw|System Exclusive data|*.syx'
     Title = 'Open MIDI File'
     Left = 256
     Top = 40

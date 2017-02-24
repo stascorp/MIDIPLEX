@@ -2532,6 +2532,11 @@ const
   szAGD = 82;
   InstLen = 40;
 var
+  Header: Array[0..5] of Byte;
+  Bits: Word;
+  BitsCnt: Byte;
+  DecCnt, DecOff, DecPos: Integer;
+
   W, InstOffset, Division: Word;
   I, InstCnt: Integer;
   InitTempo: Cardinal;
@@ -2541,6 +2546,188 @@ var
   checkOff, isAGD, isM32, isV2: Boolean;
   HERADInst: Array[0..InstLen-1] of Byte;
   MIDIData: TMemoryStream;
+
+  function GetBit(): Byte;
+  begin
+    if BitsCnt = 0 then
+    begin
+      F.ReadBuffer(Bits, 2);
+      BitsCnt := 16;
+    end;
+    Result := Bits and 1;
+    Bits := Bits shr 1;
+    Dec(BitsCnt);
+  end;
+  function IsHSQ: Boolean;
+  var
+    Chk: Byte;
+    I: Integer;
+  begin
+    // Header[0] - word DecompSize
+    // Header[1]
+    // Header[2] - byte Check = 0
+    // Header[3] - word CompSize
+    // Header[4]
+    // Header[5] - byte Checksum
+    Result := False;
+    if Header[2] > 0 then
+    begin
+      // Wrong check byte
+      Exit;
+    end;
+    if PWord(@Header[3])^ <> F.Size then
+    begin
+      // Wrong compressed size
+      Exit;
+    end;
+    Chk := 0;
+    for I := 0 to 6 - 1 do
+      Chk := (Chk + Header[I]) and $FF;
+    if Chk <> $AB then
+    begin
+      // Wrong checksum
+      Exit;
+    end;
+    Result := True;
+  end;
+  function IsSQX: Boolean;
+  begin
+    // Header[0] - word DecompSize
+    // Header[1]
+    // Header[2] - byte SQX type
+    // Header[3] - byte SQX mode
+    // Header[4] - byte Unknown = 2
+    // Header[5] - byte CntOffPart
+    Result := False;
+    if Header[2] > 2 then
+    begin
+      // Wrong SQX type
+      Exit;
+    end;
+    if Header[3] > 1 then
+    begin
+      // Wrong SQX mode
+      Exit;
+    end;
+    if Header[5] = 0 then
+    begin
+      // Wrong bit count
+      Exit;
+    end;
+    Result := True;
+  end;
+  procedure DecHSQ;
+  var
+    O: TMemoryStream;
+    B: Byte;
+    I: Integer;
+  begin
+    Log.Lines.Add('[*] Decompressing HSQ data...');
+    O := TMemoryStream.Create;
+    BitsCnt := 0;
+    DecCnt := 0;
+    while O.Size < PWord(@Header[0])^ do
+    begin
+      if GetBit() > 0 then
+      begin
+        F.ReadBuffer(B, 1);
+        O.WriteBuffer(B, 1);
+      end
+      else
+      begin
+        if GetBit() > 0 then
+        begin
+          F.ReadBuffer(DecCnt, 2);
+          DecOff := (DecCnt shr 3) - 8192;
+          DecCnt := DecCnt and 7;
+          if DecCnt = 0 then
+            F.ReadBuffer(DecCnt, 1);
+          if DecCnt = 0 then
+            Break;
+        end
+        else
+        begin
+          DecCnt := GetBit() * 2 + GetBit();
+          F.ReadBuffer(B, 1);
+          DecOff := B - 256;
+        end;
+        DecCnt := DecCnt + 2;
+        DecPos := O.Position;
+        for I := 0 to DecCnt - 1 do
+        begin
+          O.Position := DecPos + DecOff + I;
+          if O.Position >= 0 then
+          begin
+            O.ReadBuffer(B, 1);
+            O.Position := O.Size;
+            O.WriteBuffer(B, 1);
+          end;
+        end;
+      end;
+    end;
+    SongData_PutStr('HERAD_Compression', 'HSQ');
+    F.SetSize(O.Size);
+    O.Seek(0, soFromBeginning);
+    O.ReadBuffer(F.Memory^, F.Size);
+    F.Seek(0, soFromBeginning);
+  end;
+  procedure DecSQX0;
+  var
+    O: TMemoryStream;
+    B: Byte;
+    I: Integer;
+  begin
+    Log.Lines.Add('[*] Decompressing SQX-0 data...');
+    O := TMemoryStream.Create;
+    BitsCnt := 0;
+    DecCnt := 0;
+    while True do
+    begin
+      if GetBit() = 0 then
+      begin
+        F.ReadBuffer(B, 1);
+        O.WriteBuffer(B, 1);
+      end
+      else
+      begin
+        if GetBit() > 0 then
+        begin
+          F.ReadBuffer(DecCnt, 2);
+          DecOff := (DecCnt shr Header[5]) - (1 shl (16 - Header[5]));
+          DecCnt := DecCnt and ((1 shl Header[5]) - 1);
+          if DecCnt = 0 then
+            F.ReadBuffer(DecCnt, 1);
+          if DecCnt = 0 then
+            Break;
+        end
+        else
+        begin
+          DecCnt := GetBit() * 2 + GetBit();
+          F.ReadBuffer(B, 1);
+          DecOff := B - 256;
+        end;
+        DecCnt := DecCnt + 2;
+        DecPos := O.Position;
+        for I := 0 to DecCnt - 1 do
+        begin
+          O.Position := DecPos + DecOff + I;
+          if O.Position >= 0 then
+          begin
+            O.ReadBuffer(B, 1);
+            O.Position := O.Size;
+            O.WriteBuffer(B, 1);
+          end
+          else
+            O.Position := O.Size;
+        end;
+      end;
+    end;
+    SongData_PutStr('HERAD_Compression', 'SQX-0');
+    F.SetSize(O.Size);
+    O.Seek(0, soFromBeginning);
+    O.ReadBuffer(F.Memory^, F.Size);
+    F.Seek(0, soFromBeginning);
+  end;
 begin
   Result := False;
   Log.Lines.Add('[*] Reading Cryo HERAD music file...');
@@ -2550,6 +2737,27 @@ begin
     Exit;
   end;
 
+  // Try to decompress data
+  F.Seek(0, soFromBeginning);
+  F.ReadBuffer(Header, 6);
+  if IsHSQ then
+    DecHSQ
+  else
+    if IsSQX then
+    begin
+      if Header[2] = 0 then
+        DecSQX0;
+      if Header[2] = 1 then
+      begin
+        Log.Lines.Add('[-] Error: SQX-1 decompression is not implemented.');
+        Exit;
+      end;
+      if Header[2] = 2 then
+      begin
+        Log.Lines.Add('[-] Error: SQX-2 decompression is not implemented.');
+        Exit;
+      end;
+    end;
   F.Seek(0, soFromBeginning);
   F.ReadBuffer(InstOffset, 2); // Instruments offset
   if (InstOffset = 0) or (F.Size < InstOffset) then begin
@@ -12950,7 +13158,9 @@ begin
       EventFormat := 'sop';
       EventProfile := 'sop';
     end;
-    if (Ext = '.sdb')
+    if (Ext = '.hsq')
+    or (Ext = '.sqx')
+    or (Ext = '.sdb')
     or (Ext = '.agd')
     or (Ext = '.m32') then begin
       Container := 'herad';
