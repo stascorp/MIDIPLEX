@@ -2659,6 +2659,9 @@ begin
   end;
   SongData_Delete('HERAD_TmpIdx');
 
+  if Length(TrackData) > 1 then
+    SongData_PutInt('MIDIType', 1);
+
   Result := True;
   Log.Lines.Add('');
   Log.Lines.Add('[*] Information:');
@@ -5816,7 +5819,7 @@ begin
   for I := 0 to Length(Trk.Data) - 1 do begin
     WriteVarVal(F, Trk.Data[I].Ticks);
     B := Trk.Data[I].Status;
-    if (B shr 4 < 15) and (Ch > 0) then
+    if (not isM32) and (B shr 4 < 15) and (Ch > 0) then
       B := B and $F0;
     F.WriteBuffer(B, 1);
     case Trk.Data[I].Status shr 4 of
