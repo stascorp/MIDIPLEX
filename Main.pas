@@ -2441,7 +2441,10 @@ begin
   SongData_PutInt('SOP_BeatPerMeasure', B);
   F.ReadBuffer(B, 1);
   SongData_PutInt('SOP_BasicTempo', B);
-  SongData_PutDWord('InitTempo', 60000000 div B);
+  if B = 0 then
+    SongData_PutDWord('InitTempo', 60000000 div 120)
+  else
+    SongData_PutDWord('InitTempo', 60000000 div B);
   F.ReadBuffer(fname, SizeOf(fname));
   fname[Length(fname) - 1] := #0;
   SongData_PutStr('SOP_Comment', PAnsiChar(@fname[0]));
