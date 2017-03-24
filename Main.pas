@@ -6498,7 +6498,11 @@ begin
     J := 0;
     while J < Length(TrackData[I].Data) do
     begin
-      if TrackData[I].Data[J].Status shr 4 = 8 then
+      if (TrackData[I].Data[J].Status shr 4 = 8)
+      or (
+        (TrackData[I].Data[J].Status shr 4 = 9) and
+        (TrackData[I].Data[J].BParm2 = 0)
+      ) then
       begin
         DelEvent(I, J, True);
         // Update indexes
