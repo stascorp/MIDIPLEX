@@ -2482,15 +2482,19 @@ begin
 
   // Tracks
   SetLength(TrackData, nTracks + 1);
-  TrackData[0].Title := PAnsiChar(@sname[0]);
-  if TrackData[0].Title = '' then
-    TrackData[0].Title := PAnsiChar(@fname[0]);
   for I := 0 to nTracks - 1 do
   begin
     Log.Lines.Add('[*] Reading track '+IntToStr(I)+'...');
     F.ReadBuffer(evCount, 2);
     F.ReadBuffer(dwDataSize, 4);
     SetLength(TrackData[I].Data, 0);
+    if I = 0 then
+    begin
+      TrackData[I].Title := PAnsiChar(@sname[0]);
+      if TrackData[I].Title = '' then
+        TrackData[I].Title := PAnsiChar(@fname[0]);
+    end else
+      TrackData[I].Title := '';
     MIDIData := TMemoryStream.Create;
     MIDIData.SetSize(dwDataSize);
     F.ReadBuffer(MIDIData.Memory^, dwDataSize);
