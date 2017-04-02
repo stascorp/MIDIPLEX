@@ -713,8 +713,8 @@ object MainForm: TMainForm
       '(*.xmi)|*.xmi|Creative Music File (*.cmf)|*.cmf|AdLib ROL (*.rol' +
       ')|*.rol|AdLib MUS (*.mus)|*.mus|AdLib IMS (*.ims)|*.ims|AdLib MD' +
       'I (*.mdi)|*.mdi|Sopepos'#39' Note (*.sop)|*.sop|Cryo HERAD (*.hsq;*.' +
-      'sqx;*.sdb;*.agd;*.m32)|*.hsq;*.sqx;*.sdb;*.agd;*.m32|Raw MIDI da' +
-      'ta (Standard)|*.raw|System Exclusive data|*.syx'
+      'sqx;*.sdb;*.agd;*.m32;*.ha2)|*.hsq;*.sqx;*.sdb;*.agd;*.m32;*.ha2' +
+      '|Raw MIDI data (Standard)|*.raw|System Exclusive data|*.syx'
     Title = 'Open MIDI File'
     Left = 256
     Top = 40
@@ -1666,8 +1666,8 @@ object MainForm: TMainForm
       'eative Music File (*.cmf)|*.cmf|AdLib ROL (*.rol)|*.rol|AdLib MU' +
       'S (*.mus)|*.mus|AdLib IMS (*.ims)|*.ims|AdLib MDI (*.mdi)|*.mdi|' +
       'Sopepos'#39' Note (*.sop)|*.sop|Cryo HERAD (*.sdb;*.agd;*.m32)|*.sdb' +
-      ';*.agd;*.m32|Raw MIDI data (Standard)|*.raw|System Exclusive dat' +
-      'a|*.syx'
+      ';*.agd;*.m32|Cryo HERAD v2 (*.ha2)|*.ha2|Raw MIDI data (Standard' +
+      ')|*.raw|System Exclusive data|*.syx'
     Options = [ofOverwritePrompt, ofHideReadOnly, ofEnableSizing]
     Title = 'Save MIDI File'
     Left = 384

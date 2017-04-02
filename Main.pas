@@ -614,6 +614,7 @@ type
     procedure Convert_SOP_MID;
     procedure Convert_SOP_MUS;
     procedure Convert_HERAD_MID;
+    procedure Convert_HERAD_HERAD_V2;
     procedure ConvertTicks(RelToAbs: Boolean; var Data: Array of Command);
     function MergeTracksUsingTicks(Tracks: Array of Integer; EOT: Boolean): Chunk;
     procedure MergeTracksByTicks;
@@ -10585,6 +10586,33 @@ begin
   Log.Lines.Add('[+] Done.');
 end;
 
+procedure TMainForm.Convert_HERAD_HERAD_V2;
+var
+  B: Byte;
+  nInsts, I: Integer;
+  S: String;
+begin
+  SongData_GetByte('HERAD_V2', B);
+  if B > 0 then
+    Exit;
+  Log.Lines.Add('[*] Converting Cryo HERAD to version 2...');
+  nInsts := 0;
+  while SongData_GetStr('HERAD_Inst#' + IntToStr(nInsts), S) do
+    Inc(nInsts);
+  for I := 0 to nInsts - 1 do
+  begin
+    S := '';
+    SongData_GetStr('HERAD_Inst#' + IntToStr(I), S);
+    if Pos('0 ', S) = 1 then
+    begin
+      S[1] := '1';
+      SongData_PutStr('HERAD_Inst#' + IntToStr(I), S);
+    end;
+  end;
+  SongData_PutInt('HERAD_V2', 1);
+  Log.Lines.Add('[+] Done.');
+end;
+
 procedure TMainForm.RefTrackList;
 var
   I: Integer;
@@ -13173,7 +13201,8 @@ begin
     or (Ext = '.sqx')
     or (Ext = '.sdb')
     or (Ext = '.agd')
-    or (Ext = '.m32') then begin
+    or (Ext = '.m32')
+    or (Ext = '.ha2') then begin
       Container := 'herad';
       EventFormat := 'herad';
       EventProfile := 'herad';
@@ -13402,6 +13431,12 @@ begin
     TargetEventFormat := 'herad';
     TargetEventProfile := 'herad';
   end;
+  if (Ext = '.ha2')
+  then begin
+    TargetContainer := 'herad';
+    TargetEventFormat := 'herad';
+    TargetEventProfile := 'herad_v2';
+  end;
   if (Ext = '.raw')
   then begin
     TargetContainer := 'raw';
@@ -13481,6 +13516,8 @@ begin
       EventFormat := 'herad';
     if TargetEventProfile = 'herad' then
       ConvertEvents('herad');
+    if TargetEventProfile = 'herad_v2' then
+      ConvertEvents('herad_v2');
     WriteHERAD(M);
     Result := True;
   end;
@@ -13618,6 +13655,8 @@ begin
     if Pos('*.mdi', FilterExt) > 0 then
       Fmt := 'mdi';
     if Pos('*.sdb', FilterExt) > 0 then
+      Fmt := 'herad';
+    if Pos('*.ha2', FilterExt) > 0 then
       Fmt := 'herad';
     if Pos('*.raw', FilterExt) > 0 then
       Fmt := 'raw';
@@ -15181,6 +15220,13 @@ begin
     then
       FileName := FileName + '.sdb';
   end;
+  if Pos('*.ha2', FilterExt) > 0 then
+  begin
+    if (ExtractFileExt(FileName) = '')
+    or (LowerCase(ExtractFileExt(FileName)) <> '.ha2')
+    then
+      FileName := FileName + '.ha2';
+  end;
   if Pos('*.raw', FilterExt) > 0 then
   begin
     if (ExtractFileExt(FileName) = '')
@@ -15637,6 +15683,11 @@ begin
       Convert_HERAD_MID;
       EventProfile := 'mid';
       EventViewProfile := 'mid';
+    end;
+    if DestProfile = 'herad_v2' then begin
+      Convert_HERAD_HERAD_V2;
+      EventProfile := 'herad';
+      EventViewProfile := 'herad';
     end;
   end;
 end;
