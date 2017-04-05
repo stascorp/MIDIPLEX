@@ -2543,7 +2543,8 @@ var
   Header: Array[0..5] of Byte;
   Bits: Word;
   BitsCnt: Byte;
-  DecCnt, DecOff, DecPos: Integer;
+  DecCnt, DecOff: SmallInt;
+  DecPos: Integer;
 
   W, InstOffset, Division: Word;
   I, InstCnt: Integer;
@@ -2565,6 +2566,20 @@ var
     Result := Bits and 1;
     Bits := Bits shr 1;
     Dec(BitsCnt);
+  end;
+  function SetMask: Word;
+  var
+    I: Integer;
+    U, L: Word;
+  begin
+    U := Word(not 0);
+    L := U;
+    for I := 1 to Header[5] do
+    begin
+      U := U shr 1;
+      L := L shl 1;
+    end;
+    Result := (not U) or (not L);
   end;
   function IsHSQ: Boolean;
   var
@@ -2600,24 +2615,30 @@ var
   end;
   function IsSQX: Boolean;
   begin
-    // Header[0] - word DecompSize
+    // Header[0] - word OutbufInit
     // Header[1]
-    // Header[2] - byte SQX type
-    // Header[3] - byte SQX mode
-    // Header[4] - byte Unknown = 2
+    // Header[2] - byte SQX flag #1
+    // Header[3] - byte SQX flag #2
+    // Header[4] - byte SQX flag #3
     // Header[5] - byte CntOffPart
     Result := False;
     if Header[2] > 2 then
     begin
-      // Wrong SQX type
+      // Wrong SQX flag #1
       Exit;
     end;
-    if Header[3] > 1 then
+    if Header[3] > 2 then
     begin
-      // Wrong SQX mode
+      // Wrong SQX flag #2
       Exit;
     end;
-    if Header[5] = 0 then
+    if Header[4] > 2 then
+    begin
+      // Wrong SQX flag #2
+      Exit;
+    end;
+    if (Header[5] = 0)
+    or (Header[5] > 15) then
     begin
       // Wrong bit count
       Exit;
@@ -2646,8 +2667,8 @@ var
         if GetBit() > 0 then
         begin
           F.ReadBuffer(DecCnt, 2);
-          DecOff := (DecCnt shr 3) - 8192;
-          DecCnt := DecCnt and 7;
+          DecOff := (Word(DecCnt) shr 3) - 8192;
+          DecCnt := Word(DecCnt) and 7;
           if DecCnt = 0 then
             F.ReadBuffer(DecCnt, 1);
           if DecCnt = 0 then
@@ -2679,58 +2700,257 @@ var
     O.ReadBuffer(F.Memory^, F.Size);
     F.Seek(0, soFromBeginning);
   end;
-  procedure DecSQX0;
+  procedure DecSQX;
   var
     O: TMemoryStream;
-    B: Byte;
-    I: Integer;
-  begin
-    Log.Lines.Add('[*] Decompressing SQX-0 data...');
-    O := TMemoryStream.Create;
-    BitsCnt := 0;
-    DecCnt := 0;
-    while True do
+    Mask: Word;
+    Chk, ChkS, B: Byte;
+
+    procedure CopyOutStr(DecOff, DecCnt: SmallInt);
+    var
+      DecPos, OutPos, I: Integer;
+      B: Byte;
     begin
-      if GetBit() = 0 then
+      DecCnt := DecCnt + 2;
+      DecPos := O.Position;
+      OutPos := DecPos;
+      for I := 0 to DecCnt - 1 do
       begin
-        F.ReadBuffer(B, 1);
-        O.WriteBuffer(B, 1);
-      end
-      else
-      begin
-        if GetBit() > 0 then
+        O.Position := DecPos + DecOff + I;
+        if O.Position >= 0 then
         begin
-          F.ReadBuffer(DecCnt, 2);
-          DecOff := (DecCnt shr Header[5]) - (1 shl (16 - Header[5]));
-          DecCnt := DecCnt and ((1 shl Header[5]) - 1);
-          if DecCnt = 0 then
-            F.ReadBuffer(DecCnt, 1);
-          if DecCnt = 0 then
-            Break;
-        end
-        else
-        begin
-          DecCnt := GetBit() * 2 + GetBit();
-          F.ReadBuffer(B, 1);
-          DecOff := B - 256;
-        end;
-        DecCnt := DecCnt + 2;
-        DecPos := O.Position;
-        for I := 0 to DecCnt - 1 do
-        begin
-          O.Position := DecPos + DecOff + I;
-          if O.Position >= 0 then
-          begin
-            O.ReadBuffer(B, 1);
-            O.Position := O.Size;
-            O.WriteBuffer(B, 1);
-          end
-          else
-            O.Position := O.Size;
+          O.ReadBuffer(B, 1);
+          O.Position := OutPos;
+          O.WriteBuffer(B, 1);
+          OutPos := O.Position;
         end;
       end;
     end;
-    SongData_PutStr('HERAD_Compression', 'SQX-0');
+  begin
+    Log.Lines.Add('[*] Decompressing SQX data...');
+    O := TMemoryStream.Create;
+    O.SetSize(65528);
+    FillChar(O.Memory^, O.Size, 0);
+    O.WriteBuffer(PWord(@Header[0])^, 2);
+    O.Seek(0, soFromBeginning);
+    Mask := SetMask;
+    Bits := 1;
+    while True do
+    begin
+      Chk := Bits and 1;
+      Bits := Bits shr 1;
+      if Bits = 0 then
+      begin
+        ChkS := Chk;
+        F.ReadBuffer(Bits, 2);
+        Chk := Bits and 1;
+        Bits := Bits shr 1;
+        if ChkS <> 0 then
+          Bits := Bits or $8000;
+      end;
+      if (Chk = 0) then
+        case Header[2] of
+          0:
+          begin
+            F.ReadBuffer(B, 1);
+            O.WriteBuffer(B, 1);
+            Continue;
+          end;
+          1:
+          begin
+            DecCnt := 0;
+            Chk := Bits and 1;
+            Bits := Bits shr 1;
+            if Bits = 0 then
+            begin
+              F.ReadBuffer(Bits, 2);
+              ChkS := Chk;
+              Chk := Bits and 1;
+              Bits := Bits shr 1;
+              if ChkS <> 0 then
+                Bits := Bits or $8000;
+              DecCnt := Chk;
+              Chk := Bits and 1;
+              Bits := Bits shr 1;
+            end
+            else
+            begin
+              DecCnt := Chk;
+              Chk := Bits and 1;
+              Bits := Bits shr 1;
+              if Bits = 0 then
+              begin
+                F.ReadBuffer(Bits, 2);
+                ChkS := Chk;
+                Chk := Bits and 1;
+                Bits := Bits shr 1;
+                if ChkS <> 0 then
+                  Bits := Bits or $8000;
+              end;
+            end;
+            DecCnt := (DecCnt shl 1) + Chk;
+            F.ReadBuffer(B, 1);
+            DecOff := B - 256;
+            CopyOutStr(DecOff, DecCnt);
+            Continue;
+          end;
+          2:
+          begin
+            F.ReadBuffer(DecCnt, 2);
+            DecOff := (DecCnt shr Header[5]) or (Mask and $FF00);
+            DecCnt := DecCnt and Lo(Mask);
+            if DecCnt = 0 then
+            begin
+              F.ReadBuffer(B, 1);
+              DecCnt := B;
+              if DecCnt = 0 then
+                Break;
+            end;
+            CopyOutStr(DecOff, DecCnt);
+            Continue;
+          end;
+        end
+      else
+      begin
+        Chk := Bits and 1;
+        Bits := Bits shr 1;
+        if Bits = 0 then
+        begin
+          F.ReadBuffer(Bits, 2);
+          ChkS := Chk;
+          Chk := Bits and 1;
+          Bits := Bits shr 1;
+          if ChkS <> 0 then
+            Bits := Bits or $8000;
+        end;
+        if (Chk = 0) then
+          case Header[3] of
+            0:
+            begin
+              F.ReadBuffer(B, 1);
+              O.WriteBuffer(B, 1);
+              Continue;
+            end;
+            1:
+            begin
+              DecCnt := 0;
+              Chk := Bits and 1;
+              Bits := Bits shr 1;
+              if Bits = 0 then
+              begin
+                F.ReadBuffer(Bits, 2);
+                ChkS := Chk;
+                Chk := Bits and 1;
+                Bits := Bits shr 1;
+                if ChkS <> 0 then
+                  Bits := Bits or $8000;
+                DecCnt := Chk;
+                Chk := Bits and 1;
+                Bits := Bits shr 1;
+              end
+              else
+              begin
+                DecCnt := Chk;
+                Chk := Bits and 1;
+                Bits := Bits shr 1;
+                if Bits = 0 then
+                begin
+                  F.ReadBuffer(Bits, 2);
+                  ChkS := Chk;
+                  Chk := Bits and 1;
+                  Bits := Bits shr 1;
+                  if ChkS <> 0 then
+                    Bits := Bits or $8000;
+                end;
+              end;
+              DecCnt := (DecCnt shl 1) + Chk;
+              F.ReadBuffer(B, 1);
+              DecOff := B - 256;
+              CopyOutStr(DecOff, DecCnt);
+              Continue;
+            end;
+            2:
+            begin
+              F.ReadBuffer(DecCnt, 2);
+              DecOff := (DecCnt shr Header[5]) or (Mask and $FF00);
+              DecCnt := DecCnt and Lo(Mask);
+              if DecCnt = 0 then
+              begin
+                F.ReadBuffer(B, 1);
+                DecCnt := B;
+                if DecCnt = 0 then
+                  Break;
+              end;
+              CopyOutStr(DecOff, DecCnt);
+              Continue;
+            end;
+          end
+        else
+          case Header[4] of
+            0:
+            begin
+              F.ReadBuffer(B, 1);
+              O.WriteBuffer(B, 1);
+              Continue;
+            end;
+            1:
+            begin
+              DecCnt := 0;
+              Chk := Bits and 1;
+              Bits := Bits shr 1;
+              if Bits = 0 then
+              begin
+                F.ReadBuffer(Bits, 2);
+                ChkS := Chk;
+                Chk := Bits and 1;
+                Bits := Bits shr 1;
+                if ChkS <> 0 then
+                  Bits := Bits or $8000;
+                DecCnt := Chk;
+                Chk := Bits and 1;
+                Bits := Bits shr 1;
+              end
+              else
+              begin
+                DecCnt := Chk;
+                Chk := Bits and 1;
+                Bits := Bits shr 1;
+                if Bits = 0 then
+                begin
+                  F.ReadBuffer(Bits, 2);
+                  ChkS := Chk;
+                  Chk := Bits and 1;
+                  Bits := Bits shr 1;
+                  if ChkS <> 0 then
+                    Bits := Bits or $8000;
+                end;
+              end;
+              DecCnt := (DecCnt shl 1) + Chk;
+              F.ReadBuffer(B, 1);
+              DecOff := B - 256;
+              CopyOutStr(DecOff, DecCnt);
+              Continue;
+            end;
+            2:
+            begin
+              F.ReadBuffer(DecCnt, 2);
+              DecOff := (DecCnt shr Header[5]) or (Mask and $FF00);
+              DecCnt := DecCnt and Lo(Mask);
+              if DecCnt = 0 then
+              begin
+                F.ReadBuffer(B, 1);
+                DecCnt := B;
+                if DecCnt = 0 then
+                  Break;
+              end;
+              CopyOutStr(DecOff, DecCnt);
+              Continue;
+            end;
+          end;
+      end;
+    end;
+    SongData_PutStr('HERAD_Compression', 'SQX');
+    O.SetSize(O.Position);
     F.SetSize(O.Size);
     O.Seek(0, soFromBeginning);
     O.ReadBuffer(F.Memory^, F.Size);
@@ -2752,20 +2972,7 @@ begin
     DecHSQ
   else
     if IsSQX then
-    begin
-      if Header[2] = 0 then
-        DecSQX0;
-      if Header[2] = 1 then
-      begin
-        Log.Lines.Add('[-] Error: SQX-1 decompression is not implemented.');
-        Exit;
-      end;
-      if Header[2] = 2 then
-      begin
-        Log.Lines.Add('[-] Error: SQX-2 decompression is not implemented.');
-        Exit;
-      end;
-    end;
+      DecSQX;
   F.Seek(0, soFromBeginning);
   F.ReadBuffer(InstOffset, 2); // Instruments offset
   if (InstOffset = 0) or (F.Size < InstOffset) then begin
