@@ -3035,7 +3035,7 @@ begin
   Speed := (W shr 8) + (W and $FF / 256);
   SongData_PutFloat('HERAD_Speed', Speed);
   Division := 24;
-  InitTempo := Round(Speed * MIDIStdTempo / 4);
+  InitTempo := Round(Speed * MIDIStdTempo * 48 / 203);
   SongData_PutDWord('InitTempo', InitTempo);
   SongData_PutInt('SMPTE', 0);
   SongData_PutInt('Division', Division);
