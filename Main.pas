@@ -617,10 +617,11 @@ type
     procedure Convert_HERAD_HERAD_V2;
     procedure ConvertTicks(RelToAbs: Boolean; var Data: Array of Command);
     function MergeTracksUsingTicks(Tracks: Array of Integer; EOT: Boolean): Chunk;
-    procedure MergeTracksByTicks;
-    procedure MergeTracksByOrder;
+    procedure MergeTracksByTicks(Trk: Array of Integer);
+    procedure MergeTracksByOrder(Trk: Array of Integer);
     procedure CalculateEvnts;
     procedure RefTrackList;
+    procedure RefTrackChecks;
     procedure ChkButtons;
     function GetInstType(Chn: Byte): String;
     function GetInstName(Prog: Byte; Chn: Byte): String;
@@ -6629,7 +6630,7 @@ begin
   if Ver = 1 then
   begin
     Log.Lines.Add('[*] Warning: MIDI Type-1 is not supported by XMIDI.');
-    MergeTracksByTicks;
+    MergeTracksByTicks([]);
   end;
   for I := 0 to Length(TrackData)-1 do
   begin
@@ -10700,7 +10701,7 @@ begin
     Log.Lines.Add('[+] Track #'+IntToStr(I)+': '+IntToStr(Length(TrackData[I].Data))+' events converted.');
   end;
 
-  MergeTracksByTicks;
+  MergeTracksByTicks([]);
 
   K := High(TrackData[0].Data);
   if K >= 0 then
@@ -10832,6 +10833,26 @@ begin
     else
       TrkCh.Items.Add(Format('%.'+IntToStr(Length(IntToStr(Length(TrackData))))+'d',[I])+
       ' | '+TrackData[I].Title);
+end;
+
+procedure TMainForm.RefTrackChecks;
+var
+  I: Integer;
+begin
+  EditDialog.clbTracks.Items.Clear;
+  EditDialog.clbTracks.Items.Add('All tracks');
+  EditDialog.clbTracks.Checked[0] := True;
+  for I := 0 to Length(TrackData) - 1 do
+    if TrackData[I].Title = '' then
+      EditDialog.clbTracks.Items.Add(
+        Format('%.' + IntToStr(Length(IntToStr(Length(TrackData)))) + 'd', [I])
+        + ' |')
+    else
+      EditDialog.clbTracks.Items.Add(
+        Format('%.' + IntToStr(Length(IntToStr(Length(TrackData)))) + 'd', [I])
+        + ' | ' + TrackData[I].Title);
+  EditDialog.AllTracks := False;
+  EditDialog.clbTracksClickCheck(nil);
 end;
 
 procedure TMainForm.CalculateEvnts;
@@ -15979,78 +16000,87 @@ begin
   ConvertTicks(False, Result.Data);
 end;
 
-procedure TMainForm.MergeTracksByTicks;
+procedure TMainForm.MergeTracksByTicks(Trk: Array of Integer);
 var
-  I: Integer;
+  I, Idx: Integer;
   Track: Chunk;
   Tracks: Array of Integer;
 begin
-  if Length(TrackData) < 2 then begin
+  SetLength(Tracks, Length(Trk));
+  if Length(Tracks) = 0 then
+  begin
+    SetLength(Tracks, Length(TrackData));
+    for I := 0 to Length(Tracks) - 1 do
+      Tracks[I] := I;
+  end else
+    for I := 0 to Length(Trk) - 1 do
+      Tracks[I] := Trk[I];
+  if Length(Tracks) < 2 then begin
     Log.Lines.Add('[-] Merge failed. At least two tracks are required.');
     Exit;
   end;
-  Log.Lines.Add('[*] Checking empty tracks...');
-  I := 0;
-  while I < Length(TrackData) do begin
-    if Length(TrackData[I].Data) = 0 then
-      DelTrack(I)
-    else
-      Inc(I);
-  end;
   Log.Lines.Add('[*] Clearing EOT events...');
-  for I := 0 to Length(TrackData) - 1 do
-    if (TrackData[I].Data[High(TrackData[I].Data)].Status = $FF)
-    and(TrackData[I].Data[High(TrackData[I].Data)].BParm1 = $2F)
-    then
-      DelEvent(I, High(TrackData[I].Data), False);
-  Log.Lines.Add('[*] Merging tracks...');
-  SetLength(Tracks, Length(TrackData));
   for I := 0 to Length(Tracks) - 1 do
-    Tracks[I] := I;
+  begin
+    Idx := Tracks[I];
+    if (Length(TrackData[Idx].Data) > 0)
+    and (TrackData[Idx].Data[High(TrackData[Idx].Data)].Status = $FF)
+    and (TrackData[Idx].Data[High(TrackData[Idx].Data)].BParm1 = $2F)
+    then
+      DelEvent(I, High(TrackData[Idx].Data), False);
+  end;
+  Log.Lines.Add('[*] Merging tracks...');
   Track := MergeTracksUsingTicks(Tracks, True);
-  while Length(TrackData) > 0 do
-    DelTrack(0);
-  AddTrack;
-  TrackData[0] := Track;
+  for I := Length(Tracks) - 1 downto 1 do
+    DelTrack(Tracks[I]);
+  Log.Lines.Add('[*] Assigning to track ' + IntToStr(Tracks[0]) + '...');
+  TrackData[Tracks[0]] := Track;
   Log.Lines.Add('[+] Done.');
 end;
 
-procedure TMainForm.MergeTracksByOrder;
+procedure TMainForm.MergeTracksByOrder(Trk: Array of Integer);
 var
-  I, J: Integer;
+  I, J, Idx: Integer;
   Ticks: UInt64;
+  Tracks: Array of Integer;
 begin
-  if Length(TrackData) < 2 then begin
+  SetLength(Tracks, Length(Trk));
+  if Length(Tracks) = 0 then
+  begin
+    SetLength(Tracks, Length(TrackData));
+    for I := 0 to Length(Tracks) - 1 do
+      Tracks[I] := I;
+  end else
+    for I := 0 to Length(Trk) - 1 do
+      Tracks[I] := Trk[I];
+  if Length(Tracks) < 2 then begin
     Log.Lines.Add('[-] Merge failed. At least two tracks are required.');
     Exit;
   end;
-  Log.Lines.Add('[*] Checking empty tracks...');
-  I := 0;
-  while I < Length(TrackData) do begin
-    if Length(TrackData[I].Data) = 0 then
-      DelTrack(I)
-    else
-      Inc(I);
-  end;
   Log.Lines.Add('[*] Clearing EOT events...');
-  for I := 0 to Length(TrackData) - 2 do
-    if (TrackData[I].Data[Length(TrackData[I].Data) - 1].Status = $FF)
-    and(TrackData[I].Data[Length(TrackData[I].Data) - 1].BParm1 = $2F)
+  for I := 0 to Length(Tracks) - 2 do
+  begin
+    Idx := Tracks[I];
+    if (Length(TrackData[Idx].Data) > 0)
+    and (TrackData[Idx].Data[High(TrackData[Idx].Data)].Status = $FF)
+    and (TrackData[Idx].Data[High(TrackData[Idx].Data)].BParm1 = $2F)
     then begin
-      Ticks := TrackData[I].Data[Length(TrackData[I].Data) - 1].Ticks;
-      TrackData[I + 1].Data[0].Ticks :=
-      TrackData[I + 1].Data[0].Ticks + Ticks;
-      DelEvent(I, Length(TrackData[I].Data) - 1, False);
+      Ticks := TrackData[Idx].Data[High(TrackData[Idx].Data)].Ticks;
+      TrackData[Tracks[I + 1]].Data[0].Ticks :=
+      TrackData[Tracks[I + 1]].Data[0].Ticks + Ticks;
+      DelEvent(Idx, Length(TrackData[Idx].Data) - 1, False);
     end;
-  Log.Lines.Add('[*] Merging tracks...');
-  while Length(TrackData) > 1 do begin
-    J := Length(TrackData[0].Data);
-    SetLength(TrackData[0].Data,
-    Length(TrackData[0].Data) + Length(TrackData[1].Data));
-    for I := 0 to Length(TrackData[1].Data) - 1 do
-      TrackData[0].Data[J + I] := TrackData[1].Data[I];
-    DelTrack(1);
   end;
+  Log.Lines.Add('[*] Merging tracks...');
+  for I := 1 to Length(Tracks) - 1 do
+  begin
+    Idx := Length(TrackData[Tracks[0]].Data);
+    SetLength(TrackData[Tracks[0]].Data, Idx + Length(TrackData[Tracks[I]].Data));
+    for J := 0 to Length(TrackData[Tracks[I]].Data) - 1 do
+      TrackData[Tracks[0]].Data[Idx + J] := TrackData[Tracks[I]].Data[J];
+  end;
+  for I := Length(Tracks) - 1 downto 1 do
+    DelTrack(Tracks[I]);
   Log.Lines.Add('[+] Done.');
 end;
 
@@ -16963,13 +16993,37 @@ begin
 end;
 
 procedure TMainForm.MMerge1Click(Sender: TObject);
+var
+  Tracks: Array of Integer;
+  I: Integer;
 begin
-  if MessageBox(Handle, 'This action will merge all tracks into one '+
+  if MessageBox(Handle, 'This action will merge selected tracks into one '+
   'by delta ticks. It''s useful when you want to convert '+
   'multi-track MIDI-1 format to single multi-channel track MIDI-0. '+
   'Do you wish to continue?', 'Merge tracks by ticks', mb_IconQuestion or mb_YesNo)<>mrYes
   then Exit;
-  MergeTracksByTicks;
+  EditDialog.Chn.Visible := False;
+  EditDialog.DeltaTime.Visible := False;
+  EditDialog.StaticText1.Visible := False;
+  EditDialog.StaticText2.Visible := False;
+  EditDialog.PageControl1.TabIndex := 18;
+  EditDialog.bOk.Caption := 'OK';
+  EditDialog.ChangeHeight(6);
+  EditDialog.Caption := 'Choose tracks for merge...';
+  EditDialog.MinTracks := 2;
+  RefTrackChecks;
+  if EditDialog.ShowModal <> mrOk then
+    Exit;
+  SetLength(Tracks, 0);
+  for I := 1 to EditDialog.clbTracks.Count - 1 do
+  begin
+    if EditDialog.clbTracks.Checked[I] then
+    begin
+      SetLength(Tracks, Length(Tracks) + 1);
+      Tracks[High(Tracks)] := I - 1;
+    end;
+  end;
+  MergeTracksByTicks(Tracks);
   RefTrackList;
   TrkCh.ItemIndex := 0;
   FillEvents(TrkCh.ItemIndex);
@@ -16977,13 +17031,37 @@ begin
 end;
 
 procedure TMainForm.MMerge2Click(Sender: TObject);
+var
+  Tracks: Array of Integer;
+  I: Integer;
 begin
-  if MessageBox(Handle, 'This action will merge all tracks into one '+
+  if MessageBox(Handle, 'This action will merge selected tracks into one '+
   'sequently by order. It''s useful when you want to convert '+
   'multi-song MIDI-2 format to single multi-channel track MIDI-0. '+
   'Do you wish to continue?', 'Merge tracks by order', mb_IconQuestion or mb_YesNo)<>mrYes
   then Exit;
-  MergeTracksByOrder;
+  EditDialog.Chn.Visible := False;
+  EditDialog.DeltaTime.Visible := False;
+  EditDialog.StaticText1.Visible := False;
+  EditDialog.StaticText2.Visible := False;
+  EditDialog.PageControl1.TabIndex := 18;
+  EditDialog.bOk.Caption := 'OK';
+  EditDialog.ChangeHeight(6);
+  EditDialog.Caption := 'Choose tracks for merge...';
+  EditDialog.MinTracks := 2;
+  RefTrackChecks;
+  if EditDialog.ShowModal <> mrOk then
+    Exit;
+  SetLength(Tracks, 0);
+  for I := 1 to EditDialog.clbTracks.Count - 1 do
+  begin
+    if EditDialog.clbTracks.Checked[I] then
+    begin
+      SetLength(Tracks, Length(Tracks) + 1);
+      Tracks[High(Tracks)] := I - 1;
+    end;
+  end;
+  MergeTracksByOrder(Tracks);
   RefTrackList;
   TrkCh.ItemIndex := 0;
   FillEvents(TrkCh.ItemIndex);

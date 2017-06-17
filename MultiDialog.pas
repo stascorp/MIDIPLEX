@@ -4,7 +4,8 @@ interface
 
 uses
   Windows, Messages, SysUtils, Variants, Classes, Graphics, Controls, Forms,
-  Dialogs, StdCtrls, Spin, ComCtrls, MIDIConsts, ExtCtrls, ActnList, Menus;
+  Dialogs, StdCtrls, Spin, ComCtrls, MIDIConsts, ExtCtrls, ActnList, Menus,
+  CheckLst;
 
 type
   TEditDialog = class(TForm)
@@ -69,7 +70,6 @@ type
     Right1: TMenuItem;
     KEsc: TAction;
     CharMenu: TPopupMenu;
-    Action1: TAction;
     Tab2: TMenuItem;
     Ins1: TMenuItem;
     Ins2: TMenuItem;
@@ -156,6 +156,8 @@ type
     lNoteDurRes: TLabel;
     seVal1: TSpinEdit;
     seVal2: TSpinEdit;
+    Tracks: TTabSheet;
+    clbTracks: TCheckListBox;
     procedure FormCreate(Sender: TObject);
     procedure VelocityChange(Sender: TObject);
     procedure ChnChange(Sender: TObject);
@@ -203,11 +205,15 @@ type
     procedure EVal2Change(Sender: TObject);
     procedure ETickOpChange(Sender: TObject);
     procedure FChnChange(Sender: TObject);
+    procedure clbTracksClickCheck(Sender: TObject);
+    procedure FormCloseQuery(Sender: TObject; var CanClose: Boolean);
   private
     { Private declarations }
   public
     { Public declarations }
     HexArray: Array of Byte;
+    AllTracks: Boolean;
+    MinTracks: Integer;
     procedure ChangeHeight(Cnt: Integer);
     procedure FillHex;
     procedure EditHex(B: Byte);
@@ -397,6 +403,12 @@ begin
   bOk.Top:=bOk.Top-Margin;
   bCancel.Top:=bCancel.Top-Margin;
   EditDialog.Height:=EditDialog.Height-Margin;
+end;
+
+procedure TEditDialog.FormCloseQuery(Sender: TObject; var CanClose: Boolean);
+begin
+  if CanClose then
+    bOk.Enabled := True;
 end;
 
 procedure TEditDialog.Ins1Click(Sender: TObject);
@@ -917,6 +929,49 @@ begin
   if P.X=23 then
     P.X:=P.X+2;
   HexMemo.CaretPos:=P;
+end;
+
+procedure TEditDialog.clbTracksClickCheck(Sender: TObject);
+var
+  Accept, Diff: Boolean;
+  Cnt, I: Integer;
+begin
+  Accept := False;
+  if clbTracks.Count > 0 then
+  begin
+    if AllTracks <> clbTracks.Checked[0] then
+    begin
+      AllTracks := clbTracks.Checked[0];
+      if AllTracks then
+        clbTracks.CheckAll(cbChecked)
+      else
+        clbTracks.CheckAll(cbUnchecked);
+    end
+    else
+    begin
+      Diff := False;
+      for I := 2 to clbTracks.Count - 1 do
+        if clbTracks.Checked[I] <> clbTracks.Checked[1] then
+        begin
+          Diff := True;
+          Break;
+        end;
+      AllTracks := (not Diff) and clbTracks.Checked[1];
+      clbTracks.Checked[0] := AllTracks;
+    end;
+    Cnt := 0;
+    for I := 1 to clbTracks.Count - 1 do
+    begin
+      if clbTracks.Checked[I] then
+        Inc(Cnt);
+      if Cnt >= MinTracks then
+      begin
+        Accept := True;
+        Break;
+      end;
+    end;
+  end;
+  bOk.Enabled := Accept;
 end;
 
 end.

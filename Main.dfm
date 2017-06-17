@@ -875,12 +875,12 @@ object MainForm: TMainForm
         Caption = '-'
       end
       object MMerge1: TMenuItem
-        Caption = 'Merge tracks by ticks'
+        Caption = 'Merge tracks by ticks...'
         Enabled = False
         OnClick = MMerge1Click
       end
       object MMerge2: TMenuItem
-        Caption = 'Merge tracks by order'
+        Caption = 'Merge tracks by order...'
         Enabled = False
         OnClick = MMerge2Click
       end

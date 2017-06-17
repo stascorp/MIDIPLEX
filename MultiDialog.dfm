@@ -13,6 +13,7 @@ object EditDialog: TEditDialog
   Font.Style = []
   OldCreateOrder = False
   Position = poOwnerFormCenter
+  OnCloseQuery = FormCloseQuery
   OnCreate = FormCreate
   PixelsPerInch = 96
   TextHeight = 13
@@ -940,6 +941,19 @@ object EditDialog: TEditDialog
           '<=')
       end
     end
+    object Tracks: TTabSheet
+      Caption = 'Tracks'
+      ImageIndex = 18
+      object clbTracks: TCheckListBox
+        Left = 5
+        Top = 6
+        Width = 297
+        Height = 191
+        OnClickCheck = clbTracksClickCheck
+        ItemHeight = 13
+        TabOrder = 0
+      end
+    end
   end
   object bOk: TButton
     Left = 76
@@ -1022,9 +1036,6 @@ object EditDialog: TEditDialog
       Caption = 'KEsc'
       ShortCut = 27
       OnExecute = KEscExecute
-    end
-    object Action1: TAction
-      Caption = 'Action1'
     end
   end
   object HexKeys: TPopupMenu
