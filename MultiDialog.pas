@@ -9,7 +9,7 @@ uses
 
 type
   TEditDialog = class(TForm)
-    PageControl1: TPageControl;
+    pcTabs: TPageControl;
     Range: TTabSheet;
     RangeFrom: TSpinEdit;
     Label1: TLabel;
@@ -24,9 +24,9 @@ type
     Label4: TLabel;
     VelLabel: TLabel;
     DeltaTime: TSpinEdit;
-    StaticText1: TStaticText;
+    stTicks: TStaticText;
     Empty: TTabSheet;
-    StaticText2: TStaticText;
+    stChan: TStaticText;
     Chn: TComboBox;
     ProgChange: TTabSheet;
     CProgram: TComboBox;
@@ -392,17 +392,17 @@ procedure TEditDialog.FormCreate(Sender: TObject);
 var
   Margin: Integer;
 begin
-  Margin:=20;
-  ClientWidth:=305;
-  ClientHeight:=146;
-  EditDialog.PageControl1.Top:=EditDialog.PageControl1.Top-Margin;
-  DeltaTime.Top:=DeltaTime.Top-Margin;
-  Chn.Top:=Chn.Top-Margin;
-  StaticText1.Top:=StaticText1.Top-Margin;
-  StaticText2.Top:=StaticText2.Top-Margin;
-  bOk.Top:=bOk.Top-Margin;
-  bCancel.Top:=bCancel.Top-Margin;
-  EditDialog.Height:=EditDialog.Height-Margin;
+  Margin := 20;
+  ClientWidth := 305;
+  ClientHeight := 146;
+  pcTabs.Top := pcTabs.Top - Margin;
+  DeltaTime.Top := DeltaTime.Top - Margin;
+  Chn.Top := Chn.Top - Margin;
+  stTicks.Top := stTicks.Top - Margin;
+  stChan.Top := stChan.Top - Margin;
+  bOk.Top := bOk.Top - Margin;
+  bCancel.Top := bCancel.Top - Margin;
+  Height := Height - Margin;
 end;
 
 procedure TEditDialog.FormCloseQuery(Sender: TObject; var CanClose: Boolean);

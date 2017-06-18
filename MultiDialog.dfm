@@ -17,7 +17,7 @@ object EditDialog: TEditDialog
   OnCreate = FormCreate
   PixelsPerInch = 96
   TextHeight = 13
-  object PageControl1: TPageControl
+  object pcTabs: TPageControl
     Left = -5
     Top = -5
     Width = 433
@@ -985,7 +985,7 @@ object EditDialog: TEditDialog
     TabOrder = 0
     Value = 1
   end
-  object StaticText1: TStaticText
+  object stTicks: TStaticText
     Left = 10
     Top = 29
     Width = 57
@@ -993,7 +993,7 @@ object EditDialog: TEditDialog
     Caption = 'Delta-time:'
     TabOrder = 5
   end
-  object StaticText2: TStaticText
+  object stChan: TStaticText
     Left = 195
     Top = 29
     Width = 47

@@ -11096,8 +11096,8 @@ begin
   EditDialog.MType.ItemIndex:=Ver;
   EditDialog.Chn.Visible:=False;
   EditDialog.DeltaTime.Visible:=False;
-  EditDialog.StaticText1.Visible:=False;
-  EditDialog.StaticText2.Visible:=False;
+  EditDialog.stTicks.Visible:=False;
+  EditDialog.stChan.Visible:=False;
   EditDialog.DVal.Value:=Division;
   if SMPTE>=0 then begin
     EditDialog.DRes.ItemIndex:=0;
@@ -11107,7 +11107,7 @@ begin
     EditDialog.DSMPTE.Value:=SMPTE;
   end;
   EditDialog.DResClick(Sender);
-  EditDialog.PageControl1.TabIndex:=16;
+  EditDialog.pcTabs.ActivePage := EditDialog.Division;
   EditDialog.bOk.Caption:='OK';
   EditDialog.ChangeHeight(1);
   EditDialog.Caption:='Change division';
@@ -11153,9 +11153,9 @@ begin
   EditDialog.MType.ItemIndex:=Ver;
   EditDialog.Chn.Visible:=False;
   EditDialog.DeltaTime.Visible:=False;
-  EditDialog.StaticText1.Visible:=False;
-  EditDialog.StaticText2.Visible:=False;
-  EditDialog.PageControl1.TabIndex:=15;
+  EditDialog.stTicks.Visible:=False;
+  EditDialog.stChan.Visible:=False;
+  EditDialog.pcTabs.ActivePage := EditDialog.MIDIType;
   EditDialog.bOk.Caption:='OK';
   EditDialog.ChangeHeight(2);
   EditDialog.Caption:='Change MIDI Type';
@@ -11596,9 +11596,9 @@ begin
   Trk:=TrkCh.ItemIndex;
   EditDialog.Chn.Visible:=False;
   EditDialog.DeltaTime.Visible:=False;
-  EditDialog.StaticText1.Visible:=False;
-  EditDialog.StaticText2.Visible:=False;
-  EditDialog.PageControl1.TabIndex:=0;
+  EditDialog.stTicks.Visible:=False;
+  EditDialog.stChan.Visible:=False;
+  EditDialog.pcTabs.ActivePage := EditDialog.Range;
   EditDialog.RangeFrom.Value:=1;
   EditDialog.RangeTo.MaxValue:=Length(TrackData[Trk].Data);
   EditDialog.RangeTo.Value:=Length(TrackData[Trk].Data);
@@ -11625,9 +11625,9 @@ begin
   Trk:=TrkCh.ItemIndex;
   EditDialog.Chn.Visible:=False;
   EditDialog.DeltaTime.Visible:=False;
-  EditDialog.StaticText1.Visible:=False;
-  EditDialog.StaticText2.Visible:=False;
-  EditDialog.PageControl1.TabIndex:=0;
+  EditDialog.stTicks.Visible:=False;
+  EditDialog.stChan.Visible:=False;
+  EditDialog.pcTabs.ActivePage := EditDialog.Range;
   EditDialog.RangeFrom.Value:=1;
   EditDialog.RangeTo.MaxValue:=Length(TrackData[Trk].Data);
   EditDialog.RangeTo.Value:=Length(TrackData[Trk].Data);
@@ -11711,8 +11711,8 @@ begin
   EditDialog.Chn.ItemIndex:=E^.Status and 15;
   EditDialog.Chn.Visible:=True;
   EditDialog.DeltaTime.Visible:=True;
-  EditDialog.StaticText1.Visible:=True;
-  EditDialog.StaticText2.Visible:=True;
+  EditDialog.stTicks.Visible:=True;
+  EditDialog.stChan.Visible:=True;
   EditDialog.bOk.Caption:='OK';
   case E^.Status shr 4 of
     8: begin
@@ -11725,7 +11725,7 @@ begin
         EditDialog.Note.ItemIndex:=127-E^.BParm1
       else
         EditDialog.Note.ItemIndex:=E^.BParm1;
-      EditDialog.PageControl1.TabIndex:=1;
+      EditDialog.pcTabs.ActivePage := EditDialog.TNote;
       EditDialog.ChangeHeight(1);
     end;
     9: begin
@@ -11743,7 +11743,7 @@ begin
         EditDialog.Note.ItemIndex:=E^.BParm1;
       EditDialog.Velocity.Position:=E^.BParm2;
       EditDialog.VelLabel.Caption:=IntToStr(E^.BParm2);
-      EditDialog.PageControl1.TabIndex:=1;
+      EditDialog.pcTabs.ActivePage := EditDialog.TNote;
       EditDialog.ChangeHeight(2);
       if (EventProfile = 'xmi')
       or (EventProfile = 'sop') then
@@ -11769,7 +11769,7 @@ begin
         EditDialog.ANote.ItemIndex:=E^.BParm1;
       EditDialog.Pressure.Position:=E^.BParm2;
       EditDialog.PrLabel.Caption:=IntToStr(E^.BParm2);
-      EditDialog.PageControl1.TabIndex:=4;
+      EditDialog.pcTabs.ActivePage := EditDialog.Aftertouch;
       EditDialog.ChangeHeight(2);
     end;
     11:
@@ -11781,7 +11781,7 @@ begin
             EditDialog.LvLabel.Caption:=IntToStr(E^.BParm2);
             EditDialog.Label12.Caption:=ControlTable[E^.BParm1]+':';
             EditDialog.Label12.Left:=64-EditDialog.Label12.Width;
-            EditDialog.PageControl1.TabIndex:=8;
+            EditDialog.pcTabs.ActivePage := EditDialog.CtrlLevel;
             EditDialog.ChangeHeight(1);
           end;
           64..69,103,122: begin
@@ -11804,7 +11804,7 @@ begin
                 1..127: EditDialog.Switch.ItemIndex:=1;
               end;
             end;
-            EditDialog.PageControl1.TabIndex:=10;
+            EditDialog.pcTabs.ActivePage := EditDialog.CtrlSwitch;
             EditDialog.ChangeHeight(2);
           end;
           84: begin
@@ -11817,12 +11817,12 @@ begin
               EditDialog.Note.ItemIndex:=127-E^.BParm2
             else
               EditDialog.Note.ItemIndex:=E^.BParm2;
-            EditDialog.PageControl1.TabIndex:=1;
+            EditDialog.pcTabs.ActivePage := EditDialog.TNote;
             EditDialog.ChangeHeight(1);
           end;
           96..97,120,121,123..125,127: begin
             EditDialog.Caption:='Event: '+ControlTable[E^.BParm1];
-            EditDialog.PageControl1.TabIndex:=2;
+            EditDialog.pcTabs.ActivePage := EditDialog.Empty;
             EditDialog.ChangeHeight(0);
           end;
           else begin
@@ -11830,7 +11830,7 @@ begin
             EditDialog.CtrlValue.MinValue:=0;
             EditDialog.CtrlValue.MaxValue:=127;
             EditDialog.CtrlValue.Value:=E^.BParm2;
-            EditDialog.PageControl1.TabIndex:=9;
+            EditDialog.pcTabs.ActivePage := EditDialog.CtrlVal;
             EditDialog.ChangeHeight(1);
             if EventProfile = 'sop' then
             begin
@@ -11852,7 +11852,7 @@ begin
         EditDialog.CVal.Value:=E^.BParm2;
         EditDialog.CtrlValue.MinValue := 0;
         EditDialog.CtrlValue.MaxValue := 127;
-        EditDialog.PageControl1.TabIndex:=7;
+        EditDialog.pcTabs.ActivePage := EditDialog.Ctrl;
         EditDialog.ChangeHeight(1);
         if EventProfile = 'sop' then
         begin
@@ -11863,14 +11863,14 @@ begin
             EditDialog.CtrlValue.Value := E^.BParm2 - 100;
           end else
             EditDialog.CtrlValue.Value := E^.BParm2;
-          EditDialog.PageControl1.TabIndex := 9;
+          EditDialog.pcTabs.ActivePage := EditDialog.CtrlVal;
         end;
       end;
     12: begin
       EditDialog.Caption:='Event: Program Change';
       EditDialog.ChnChange(Sender);
       EditDialog.CProgram.ItemIndex:=E^.BParm1;
-      EditDialog.PageControl1.TabIndex:=3;
+      EditDialog.pcTabs.ActivePage := EditDialog.ProgChange;
       EditDialog.ChangeHeight(1);
     end;
     13: begin
@@ -11879,19 +11879,19 @@ begin
       EditDialog.ANote.Visible:=False;
       EditDialog.Pressure.Position:=E^.BParm1;
       EditDialog.PrLabel.Caption:=IntToStr(E^.BParm1);
-      EditDialog.PageControl1.TabIndex:=4;
+      EditDialog.pcTabs.ActivePage := EditDialog.Aftertouch;
       EditDialog.ChangeHeight(1);
     end;
     14: begin
       EditDialog.Caption:='Event: Pitch Bend';
       EditDialog.PitchBend.Position:=E^.Value;
       EditDialog.PbLabel.Caption:=IntToStr(E^.Value);
-      EditDialog.PageControl1.TabIndex:=5;
+      EditDialog.pcTabs.ActivePage := EditDialog.Pitch;
       EditDialog.ChangeHeight(1);
     end;
     15: begin
       EditDialog.Chn.Visible:=False;
-      EditDialog.StaticText2.Visible:=False;
+      EditDialog.stChan.Visible:=False;
       case E^.Status and 15 of
         0,7: begin
           EditDialog.Caption:='Event: '+SystemTable[E^.Status and 15];
@@ -11899,7 +11899,7 @@ begin
           for I:=0 to Length(E^.DataArray)-1 do
             EditDialog.HexArray[I]:=E^.DataArray[I];
           EditDialog.FillHex;
-          EditDialog.PageControl1.TabIndex:=11;
+          EditDialog.pcTabs.ActivePage := EditDialog.HexEdit;
           EditDialog.ChangeHeight(4);
         end;
         1: begin
@@ -11910,7 +11910,7 @@ begin
           EditDialog.CVal.MaxValue:=15;
           EditDialog.Control.Value:=E^.BParm1 shr 4;
           EditDialog.CVal.Value:=E^.BParm1 and 15;
-          EditDialog.PageControl1.TabIndex:=7;
+          EditDialog.pcTabs.ActivePage := EditDialog.Ctrl;
           EditDialog.ChangeHeight(1);
         end;
         2: begin
@@ -11918,7 +11918,7 @@ begin
           EditDialog.CtrlValue.MinValue:=0;
           EditDialog.CtrlValue.MaxValue:=16383;
           EditDialog.CtrlValue.Value:=E^.Value;
-          EditDialog.PageControl1.TabIndex:=9;
+          EditDialog.pcTabs.ActivePage := EditDialog.CtrlVal;
           EditDialog.ChangeHeight(1);
         end;
         3: begin
@@ -11926,12 +11926,12 @@ begin
           EditDialog.CtrlValue.MinValue:=0;
           EditDialog.CtrlValue.MaxValue:=127;
           EditDialog.CtrlValue.Value:=E^.BParm1;
-          EditDialog.PageControl1.TabIndex:=9;
+          EditDialog.pcTabs.ActivePage := EditDialog.CtrlVal;
           EditDialog.ChangeHeight(1);
         end;
         4..6,8..14: begin
           EditDialog.Caption:='Event: '+SystemTable[E^.Status and 15];
-          EditDialog.PageControl1.TabIndex:=2;
+          EditDialog.pcTabs.ActivePage := EditDialog.Empty;
           EditDialog.ChangeHeight(0);
         end;
         15:
@@ -11941,21 +11941,21 @@ begin
             EditDialog.CtrlValue.MinValue:=0;
             EditDialog.CtrlValue.MaxValue:=65535;
             EditDialog.CtrlValue.Value:=E^.Value;
-            EditDialog.PageControl1.TabIndex:=9;
+            EditDialog.pcTabs.ActivePage := EditDialog.CtrlVal;
             EditDialog.ChangeHeight(1);
           end;
           1..7: begin
             EditDialog.Caption:='Event: '+MetaTable[E^.BParm1];
             EditDialog.StrEdit.Text:=E^.DataString;
-            EditDialog.PageControl1.TabIndex:=6;
+            EditDialog.pcTabs.ActivePage := EditDialog.Str;
             EditDialog.ChangeHeight(4);
           end;
           32: begin
             EditDialog.Caption:='Event: '+MetaTable[E^.BParm1];
             EditDialog.Chn.Visible:=True;
-            EditDialog.StaticText2.Visible:=True;
+            EditDialog.stChan.Visible:=True;
             EditDialog.Chn.ItemIndex:=E^.Value;
-            EditDialog.PageControl1.TabIndex:=2;
+            EditDialog.pcTabs.ActivePage := EditDialog.Empty;
             EditDialog.ChangeHeight(0);
           end;
           33: begin
@@ -11963,12 +11963,12 @@ begin
             EditDialog.CtrlValue.MinValue:=0;
             EditDialog.CtrlValue.MaxValue:=255;
             EditDialog.CtrlValue.Value:=E^.Value;
-            EditDialog.PageControl1.TabIndex:=9;
+            EditDialog.pcTabs.ActivePage := EditDialog.CtrlVal;
             EditDialog.ChangeHeight(1);
           end;
           47: begin
             EditDialog.Caption:='Event: '+MetaTable[E^.BParm1];
-            EditDialog.PageControl1.TabIndex:=2;
+            EditDialog.pcTabs.ActivePage := EditDialog.Empty;
             EditDialog.ChangeHeight(0);
           end;
           81: begin
@@ -11976,7 +11976,7 @@ begin
             EditDialog.CtrlValue.MinValue:=0;
             EditDialog.CtrlValue.MaxValue:=16777215;
             EditDialog.CtrlValue.Value:=E^.Value;
-            EditDialog.PageControl1.TabIndex:=9;
+            EditDialog.pcTabs.ActivePage := EditDialog.CtrlVal;
             EditDialog.ChangeHeight(1);
           end;
           84: begin
@@ -11986,7 +11986,7 @@ begin
             EditDialog.S_S.Value:=E^.DataArray[2];
             EditDialog.S_F.Value:=E^.DataArray[3];
             EditDialog.S_FF.Value:=E^.DataArray[4];
-            EditDialog.PageControl1.TabIndex:=12;
+            EditDialog.pcTabs.ActivePage := EditDialog.SMPTE;
             EditDialog.ChangeHeight(2);
           end;
           88: begin
@@ -11995,7 +11995,7 @@ begin
             EditDialog.T_D.Value:=E^.DataArray[1];
             EditDialog.T_C.Value:=E^.DataArray[2];
             EditDialog.T_32.Value:=E^.DataArray[3];
-            EditDialog.PageControl1.TabIndex:=13;
+            EditDialog.pcTabs.ActivePage := EditDialog.TimeSign;
             EditDialog.ChangeHeight(2);
           end;
           89: begin
@@ -12003,7 +12003,7 @@ begin
             EditDialog.KeyVal.Value:=ShortInt(E^.DataArray[0]);
             EditDialog.KeyRadio.ItemIndex:=E^.DataArray[1];
             EditDialog.KeyValChange(Sender);
-            EditDialog.PageControl1.TabIndex:=14;
+            EditDialog.pcTabs.ActivePage := EditDialog.KeySign;
             EditDialog.ChangeHeight(2);
           end;
           else begin
@@ -12012,7 +12012,7 @@ begin
             for I:=0 to Length(E^.DataArray)-1 do
               EditDialog.HexArray[I]:=E^.DataArray[I];
             EditDialog.FillHex;
-            EditDialog.PageControl1.TabIndex:=11;
+            EditDialog.pcTabs.ActivePage := EditDialog.HexEdit;
             EditDialog.ChangeHeight(4);
           end;
         end;
@@ -14163,11 +14163,11 @@ end;
 
 procedure TMainForm.MFindClick(Sender: TObject);
 begin
-  EditDialog.PageControl1.TabIndex:=17;
+  EditDialog.pcTabs.ActivePage := EditDialog.Search;
   EditDialog.ChangeHeight(4);
   EditDialog.ETypeChange(Sender);
-  EditDialog.StaticText1.Visible:=False;
-  EditDialog.StaticText2.Visible:=False;
+  EditDialog.stTicks.Visible:=False;
+  EditDialog.stChan.Visible:=False;
   EditDialog.DeltaTime.Visible:=False;
   EditDialog.Chn.Visible:=False;
   EditDialog.Caption:='Find event';
@@ -17004,9 +17004,9 @@ begin
   then Exit;
   EditDialog.Chn.Visible := False;
   EditDialog.DeltaTime.Visible := False;
-  EditDialog.StaticText1.Visible := False;
-  EditDialog.StaticText2.Visible := False;
-  EditDialog.PageControl1.TabIndex := 18;
+  EditDialog.stTicks.Visible := False;
+  EditDialog.stChan.Visible := False;
+  EditDialog.pcTabs.ActivePage := EditDialog.Tracks;
   EditDialog.bOk.Caption := 'OK';
   EditDialog.ChangeHeight(6);
   EditDialog.Caption := 'Choose tracks for merge...';
@@ -17042,9 +17042,9 @@ begin
   then Exit;
   EditDialog.Chn.Visible := False;
   EditDialog.DeltaTime.Visible := False;
-  EditDialog.StaticText1.Visible := False;
-  EditDialog.StaticText2.Visible := False;
-  EditDialog.PageControl1.TabIndex := 18;
+  EditDialog.stTicks.Visible := False;
+  EditDialog.stChan.Visible := False;
+  EditDialog.pcTabs.ActivePage := EditDialog.Tracks;
   EditDialog.bOk.Caption := 'OK';
   EditDialog.ChangeHeight(6);
   EditDialog.Caption := 'Choose tracks for merge...';
