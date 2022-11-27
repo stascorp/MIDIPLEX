@@ -8,3 +8,5 @@ The main goal is to provide exclusive editing features that other sequencers don
 Project development was started in Apr 2012 by Stas'M and abandoned for long period of time. In June 2016 the source codes were published under GNU GPL v3 license, and development continued.
 
 For more information see LICENSE file.
+
+Test.
